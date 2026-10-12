@@ -1,0 +1,5 @@
+{
+  "baseUrl": "https://api.example.com",
+  "apiKey": "111",
+  "model": "gpt4"
+}
