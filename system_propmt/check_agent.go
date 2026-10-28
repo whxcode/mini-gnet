@@ -5,8 +5,11 @@ import (
 	"os"
 )
 
-func CheckAgentPrompt() string {
+func CheckAgentPrompt(projectDir ...string) string {
 	wd, _ := os.Getwd()
+	if len(projectDir) > 0 && projectDir[0] != "" {
+		wd = projectDir[0]
+	}
 	return fmt.Sprintf(`
 你是一个运行在本地项目中的 Go 编程助手。
 
