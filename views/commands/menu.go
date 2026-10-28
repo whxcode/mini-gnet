@@ -18,6 +18,7 @@ var (
 	bad    = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
 )
 
+// clip 去掉控制字符并按终端显示宽度裁剪外部文本。
 func clip(s string, width int) string {
 	s = strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
@@ -29,12 +30,18 @@ func clip(s string, width int) string {
 }
 
 type helpModel struct {
+	text  string
 	width int
 	done  bool
 }
 
-func newHelp() helpModel          { return helpModel{width: 78} }
+// newHelp 保存应用传入的帮助文本，不依赖应用的命令注册表。
+func newHelp(text string) helpModel { return helpModel{width: 78, text: text} }
+
+// Init 帮助菜单无需启动后台任务。
 func (m helpModel) Init() tea.Cmd { return nil }
+
+// Update 处理窗口尺寸与关闭按键。
 func (m helpModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -47,11 +54,13 @@ func (m helpModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
+
+// View 绘制应用传入的帮助文本，关闭后清空菜单。
 func (m helpModel) View() tea.View {
 	if m.done {
 		return tea.NewView("")
 	}
-	return tea.NewView(panel.Width(m.width).Render(accent.Render("◆ 内置命令") + "\n\n" + HelpText() + "\n\n" + muted.Render("Esc / Enter 返回输入")))
+	return tea.NewView(panel.Width(m.width).Render(accent.Render("◆ 内置命令") + "\n\n" + m.text + "\n\n" + muted.Render("Esc / Enter 返回输入")))
 }
 
 type resumeModel struct {
@@ -65,10 +74,15 @@ type resumeModel struct {
 	done     bool
 }
 
+// newResume 初始化历史选择菜单，不打开或修改任何会话。
 func newResume(sessions []message.SessionInfo, current string) resumeModel {
 	return resumeModel{sessions: sessions, current: current, width: 78, height: 24}
 }
+
+// Init 历史列表已由调用方读取，无需启动额外任务。
 func (m resumeModel) Init() tea.Cmd { return nil }
+
+// Update 处理上下选择和确认；Esc 保留空的选择结果。
 func (m resumeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -99,6 +113,8 @@ func (m resumeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
+
+// View 按窗口高度分页显示历史会话，并标明当前项与损坏记录。
 func (m resumeModel) View() tea.View {
 	if m.done {
 		return tea.NewView("")

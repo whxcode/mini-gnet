@@ -2,11 +2,9 @@ package app
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/whxcode/mini-gnet/config"
 	prompt "github.com/whxcode/mini-gnet/system_propmt"
-	"github.com/whxcode/mini-gnet/views/commands"
 	"github.com/whxcode/mini-gnet/views/conversation"
 	"github.com/whxcode/mini-gnet/views/message"
 )
@@ -23,70 +21,6 @@ func startSession(cfg config.Config) (*message.TempMessage, error) {
 		return nil, err
 	}
 	return session, nil
-}
-
-// applyLocalCommand 在菜单确认后才改变配置或会话，Esc 返回的空结果不会触发任何修改。
-func (a *App) applyLocalCommand(result commands.Result) error {
-	if result.Config != nil {
-		next := *result.Config
-		if next.ProjectDir == "" {
-			var err error
-			next.ProjectDir, err = os.Getwd()
-			if err != nil {
-				return err
-			}
-		}
-		var replacement *message.TempMessage
-		// 改变目录时开启新会话，避免把新项目的问题混进旧项目的记录。
-		if next.ChatsDir != a.config.ChatsDir || next.ProjectDir != a.config.ProjectDir {
-			var err error
-			replacement, err = startSession(next)
-			if err != nil {
-				return err
-			}
-		}
-		if err := config.Save(*result.Config); err != nil {
-			if replacement != nil {
-				replacement.Close()
-			}
-			return err
-		}
-		if replacement != nil {
-			a.session.Close()
-			a.session = replacement
-		}
-		a.config = next
-		a.client.BaseURL, a.client.ApiKey, a.client.Model = next.BaseURL, next.APIKey, next.Model
-		path, _ := config.Path()
-		text := "配置已保存并应用：" + path + "\n模型：" + a.config.Model
-		if replacement != nil {
-			text += "\n目录已改变，已开启新会话：" + replacement.SessionID
-		}
-		conversation.Print(conversation.Event{Role: conversation.System, Text: text})
-	}
-	if result.New || result.SessionID != "" {
-		if result.SessionID == a.session.SessionID {
-			conversation.Print(conversation.Event{Role: conversation.System, Text: "当前已经是该会话。"})
-			return nil
-		}
-		var next *message.TempMessage
-		var err error
-		if result.New {
-			next, err = startSession(a.config)
-		} else {
-			next, err = message.Resume(a.config.ChatsDir, result.SessionID)
-		}
-		if err != nil {
-			return err
-		}
-		a.session.Close()
-		a.session = next
-		conversation.Print(conversation.Event{Role: conversation.System, Text: "当前会话：" + next.SessionID})
-		if !result.New {
-			showHistory(next)
-		}
-	}
-	return nil
 }
 
 // showHistory 回显最近的对话；内部提示词不显示，模型上下文仍保留完整记录。

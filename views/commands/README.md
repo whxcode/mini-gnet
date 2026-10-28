@@ -35,9 +35,12 @@
 
 ## 阅读代码
 
-1. `commands.go`：识别命令并返回操作意图。
-2. `menu.go`、`config.go`：Bubble Tea 的 `Update` 处理按键、`View` 绘制菜单；Esc 返回空结果。
-3. `internal/app/session.go` 的 `App.applyLocalCommand`：确认后保存配置或切换会话。
-4. `views/message/history.go`：读取、列出和继续写入历史记录。
+1. `internal/app/commands.go`：`builtinCommands()` 统一登记命令，`lookupCommand` 只查找命令与检查参数。
+2. `internal/app/app.go`：主循环拿到命令后直接调用 `command.Handler(a, args)`，只处理返回的错误。
+3. `internal/app/command_handlers.go`：每个 handler 接收 `*App`，完成菜单交互、保存配置或切换会话等全部操作，只返回 `error`。
+4. 本目录的 `commands.go`、`menu.go`、`config.go`：只负责菜单显示，向 handler 返回具体选择；Esc 返回空选择。
+5. `views/message/history.go`：读取、列出和继续写入历史记录。
 
-这种分工让菜单操作可独立测试，按 Esc 不会提前改变当前会话或配置。
+handler 与 `App` 放在同一个包，能直接操作应用字段，也避免视图包与应用包循环引用。按 Esc 时 handler 直接返回，不改变当前会话或配置。这里没有通用的 `Result`，也没有再次解释结果的 `applyLocalCommand`。
+
+新增命令时，定义一个命令名称常量、编写对应 handler，再在 `builtinCommands()` 中登记一项即可；无需增加字符串 `switch` 分支。`MaxArgs` 默认为 0，表示不接受参数。注册表使用有序列表，帮助菜单的顺序也由它决定。

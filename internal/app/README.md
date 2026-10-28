@@ -13,12 +13,14 @@ main → app.New → App.Run → App.Chat → runAgentTurn
 | `app.go` | 初始化、输入循环、命令分流、启动一轮对话 |
 | `agent.go` | 请求模型、主动读取回答、执行工具、重试或结束 |
 | `tools.go` | 实际执行 Bash/Python，以及将工具数据转换为显示文字 |
-| `session.go` | 确认配置、创建或切换会话、回显历史 |
+| `commands.go` | 命令注册、查找与参数检查 |
+| `command_handlers.go` | handler 直接接收 App，完成配置保存、会话切换或退出 |
+| `session.go` | 创建会话和回显历史的通用操作 |
 
 ## 一轮对话的执行顺序
 
 1. `App.Run` 从输入框读取完整问题。
-2. 如果是本地命令，打开相应菜单并应用确认结果，然后回到输入。
+2. 如果是本地命令，查找后直接调用 `command.Handler(a, args)`；handler 完成操作，只返回错误，然后回到输入。
 3. 普通问题进入 `App.Chat`，先保存用户消息。
 4. `runAgentTurn` 取出当前会话消息，调用 `readAnswer`。
 5. `readAnswer` 调用模型客户端的 `OpenStream`，拿到响应流。
@@ -61,7 +63,9 @@ a.session.Close()
 a.session = next
 ```
 
-不再传递 `**TempMessage` 让另一层间接修改调用者的变量。新会话读取成功后才替换旧会话；Esc 不返回确认结果，因此不会切换。
+不再传递 `**TempMessage` 让另一层间接修改调用者的变量。新会话读取成功后才替换旧会话；Esc 时 handler 直接返回，因此不会切换。
+
+命令 handler 的签名是 `func(app *App, args []string) error`。例如 `/resume` 的 handler 自己选择历史、读取记录、关闭旧会话并更新 `app.session`，主循环不再接收 `Result` 后二次执行。`/exit` 的 handler 设置 `app.quit`，主循环退出并由 `main` 关闭资源。
 
 ## 本轮验证
 

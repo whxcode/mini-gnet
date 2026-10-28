@@ -14,7 +14,6 @@ import (
 	"github.com/whxcode/mini-gnet/config"
 	"github.com/whxcode/mini-gnet/net"
 	toolsList "github.com/whxcode/mini-gnet/tools/list"
-	"github.com/whxcode/mini-gnet/views/commands"
 	"github.com/whxcode/mini-gnet/views/conversation"
 	"github.com/whxcode/mini-gnet/views/input"
 	"github.com/whxcode/mini-gnet/views/message"
@@ -27,6 +26,7 @@ type App struct {
 	session *message.TempMessage
 	tools   []openai.Tool
 	input   *input.Reader
+	quit    bool // /exit 的 handler 设置，主循环据此退出。
 }
 
 // New 按顺序加载配置、工具和会话；初始化成功后，调用者负责 Close。
@@ -62,7 +62,7 @@ func (a *App) Close() error { return a.session.Close() }
 func (a *App) Run(ctx context.Context) error {
 	conversation.Print(conversation.Event{Role: conversation.System, Text: fmt.Sprintf(
 		"pwd: %s\nbase: %s\nmodel: %s\nsession: %s", a.config.ProjectDir, a.config.BaseURL, a.config.Model, a.session.SessionID)})
-	for {
+	for !a.quit {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -73,20 +73,19 @@ func (a *App) Run(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+
 		if strings.TrimSpace(query) == "" {
 			continue
 		}
 
-		// 命令先分流，不能当成用户问题写入历史或发送给模型。
-		result, err := commands.Handle(query, a.config, a.session.SessionID)
-		if result.Handled {
-			if result.Quit {
-				return nil
-			}
-			if err == nil {
-				err = a.applyLocalCommand(result)
-			}
-			if err != nil {
+		// 主循环拿到 handler 后直接传入 App；命令的修改操作在 handler 内完成。
+		command, args, err := lookupCommand(query)
+		if err != nil {
+			conversation.Print(conversation.Event{Role: conversation.Error, Text: err.Error()})
+			continue
+		}
+		if command != nil {
+			if err := command.Handler(a, args); err != nil {
 				conversation.Print(conversation.Event{Role: conversation.Error, Text: err.Error()})
 			}
 			continue
@@ -102,6 +101,7 @@ func (a *App) Run(ctx context.Context) error {
 			return fmt.Errorf("保存聊天记录失败：%w", err)
 		}
 	}
+	return nil
 }
 
 // Chat 保存提问，然后直接启动 Agent 和显示界面。这是业务与界面之间唯一的并发边界。
@@ -124,7 +124,7 @@ func (a *App) Chat(parent context.Context, query string) error {
 		done <- err
 	}()
 	viewErr := conversation.Run(ctx, cancel, events)
-	cancel() // 界面异常退出时也要停止网络请求和工具执行。
+	cancel()           // 界面异常退出时也要停止网络请求和工具执行。
 	agentErr := <-done // sendEvent 在取消后不会阻塞；等待本轮彻底结束再返回。
 	if viewErr != nil {
 		return viewErr

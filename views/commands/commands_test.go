@@ -10,6 +10,7 @@ import (
 	"github.com/whxcode/mini-gnet/views/message"
 )
 
+// TestMenusEscapeWithoutApplying 验证 Esc 丢弃编辑与选择，配置界面不暴露密钥。
 func TestMenusEscapeWithoutApplying(t *testing.T) {
 	cfg := config.Config{BaseURL: "http://localhost:11434/v1", Model: "original", APIKey: "test-hidden-secret", ChatsDir: t.TempDir()}
 	m := newConfig(cfg)
@@ -28,12 +29,13 @@ func TestMenusEscapeWithoutApplying(t *testing.T) {
 	if got := next.(resumeModel); !got.done || got.selected != "" {
 		t.Fatal("Esc 不应切换会话")
 	}
-	next, _ = newHelp().Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	next, _ = newHelp("测试帮助").Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	if !next.(helpModel).done {
 		t.Fatal("帮助菜单未返回")
 	}
 }
 
+// TestResumeSelectionAndEmpty 验证历史菜单选择、损坏记录和空列表的处理。
 func TestResumeSelectionAndEmpty(t *testing.T) {
 	r := newResume([]message.SessionInfo{{ID: "first"}, {ID: "second"}, {ID: "bad", Problem: "损坏"}}, "first")
 	next, _ := r.Update(tea.KeyPressMsg{Code: tea.KeyDown})
@@ -53,6 +55,7 @@ func TestResumeSelectionAndEmpty(t *testing.T) {
 	}
 }
 
+// TestConfigSaveAndValidation 验证无效配置被拒绝，确认后才返回新配置。
 func TestConfigSaveAndValidation(t *testing.T) {
 	cfg := config.Config{BaseURL: "http://localhost:11434/v1", Model: "original", ChatsDir: t.TempDir()}
 	m := newConfig(cfg)
@@ -67,20 +70,5 @@ func TestConfigSaveAndValidation(t *testing.T) {
 	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if got := next.(configModel); !got.done || got.saved == nil || got.saved.Model != "new-model" {
 		t.Fatal("未返回已确认的配置")
-	}
-}
-
-func TestLocalCommandRouting(t *testing.T) {
-	for _, tc := range []struct {
-		text    string
-		handled bool
-	}{
-		{"/new", true}, {"/exit", true}, {"/resume old-id", true}, {"/unknown", true},
-		{"/Users/mac/project 下有什么", false}, {"普通问题", false}, {"/help\n这是一段代码", false},
-	} {
-		result, _ := Handle(tc.text, config.Config{}, "")
-		if result.Handled != tc.handled {
-			t.Fatalf("%q 路由错误", tc.text)
-		}
 	}
 }
