@@ -15,5 +15,22 @@
         "required": ["command"]
       }
     }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "run_python",
+      "description": "执行完整的临时 Python 代码。程序自动创建临时目录、写入 main.py、运行并清理，返回 stdout、stderr、exit_code 和可能的 error。适合用户要求用 Python 获取系统信息或进行计算。执行目录不是项目目录；不是安全沙箱，仅执行用户授权的操作。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "完整的 Python 源码，不包含 Markdown 代码围栏。顶层代码不要多余缩进，使用 print 输出需要返回的信息。优先使用标准库。"
+          }
+        },
+        "required": ["code"]
+      }
+    }
   }
 ]
