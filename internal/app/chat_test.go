@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -16,8 +18,8 @@ import (
 	"github.com/whxcode/mini-gnet/net"
 )
 
-// TestChatToolRoundTrip 从应用入口验证请求模型、执行工具、回传结果和保存最终回答的完整顺序。
-func TestChatToolRoundTrip(t *testing.T) {
+// TestRunPipeToolRoundTrip 从应用入口验证请求模型、执行工具、回传结果和保存最终回答的完整顺序。
+func TestRunPipeToolRoundTrip(t *testing.T) {
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request openai.ChatCompletionRequest
@@ -42,22 +44,23 @@ func TestChatToolRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := &App{config: cfg, session: session, client: &net.Client{BaseURL: server.URL, Model: "test", HTTP: server.Client()}}
+	a := &App{}
+	a.attachSession(session, cfg, net.Client{BaseURL: server.URL, Model: "test", HTTP: server.Client()})
 	defer a.Close()
-	if err := a.Chat(context.Background(), "获取当前目录"); err != nil {
+	if err := a.RunPipe(context.Background(), strings.NewReader("/new\n获取当前目录"), io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	history := a.session.ToChatCompletionMessage()
+	history := a.CurrentSession.history.ToChatCompletionMessage()
 	if requests.Load() != 2 || len(history) != 5 || history[4].Content != "已获取目录" {
 		t.Fatalf("unexpected history: %+v", history)
 	}
-	if err := a.session.Err(); err != nil {
+	if err := a.CurrentSession.history.Err(); err != nil {
 		t.Fatal(err)
 	}
 }
 
-// TestChatCancellationJoinsWorker 验证应用取消后等待 Agent 退出，不遗留写会话的后台任务。
-func TestChatCancellationJoinsWorker(t *testing.T) {
+// TestRunPipeCancellationClosesStream 验证应用取消后等待 Agent 退出，不遗留写会话的后台任务。
+func TestRunPipeCancellationClosesStream(t *testing.T) {
 	started := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -72,12 +75,13 @@ func TestChatCancellationJoinsWorker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := &App{config: cfg, session: session, client: &net.Client{BaseURL: server.URL, Model: "test", HTTP: server.Client()}}
+	a := &App{}
+	a.attachSession(session, cfg, net.Client{BaseURL: server.URL, Model: "test", HTTP: server.Client()})
 	defer a.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { done <- a.Chat(ctx, "等待回答") }()
+	go func() { done <- a.RunPipe(ctx, strings.NewReader("等待回答\n"), io.Discard) }()
 	select {
 	case <-started:
 	case <-ctx.Done():
@@ -90,9 +94,9 @@ func TestChatCancellationJoinsWorker(t *testing.T) {
 			t.Fatalf("unexpected cancellation: %v", err)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("Chat did not wait for worker shutdown correctly")
+		t.Fatal("Run did not wait for stream shutdown correctly")
 	}
-	if len(a.session.ToChatCompletionMessage()) != 2 {
+	if len(a.CurrentSession.history.ToChatCompletionMessage()) != 2 {
 		t.Fatal("incomplete answer saved as complete")
 	}
 }

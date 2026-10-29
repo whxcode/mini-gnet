@@ -19,6 +19,7 @@ var (
 			Foreground(inputMuted)
 )
 
+// editorStyles 统一输入框各行的底色，避免光标行出现不连续的黑色色带。
 func editorStyles() textarea.Styles {
 	styles := textarea.DefaultDarkStyles()
 	// textarea 会分别渲染普通行、光标所在行与空白行。

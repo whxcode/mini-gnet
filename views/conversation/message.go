@@ -46,18 +46,23 @@ func Username() string {
 
 // roleStyle 为各消息角色选择颜色和图标。
 func roleStyle(role Role) (lipgloss.Style, string) {
-	color, icon := "12", "●"
+	color := "#A7C7F5"
+	icon := "●"
 	switch role {
 	case User:
-		color, icon = "10", "●"
+		color = "#9BC5AE"
 	case Assistant:
-		color, icon = "13", "✦"
+		color = "#B9A7DE"
+		icon = "✦"
 	case Tool:
-		color, icon = "11", "⚙"
+		color = "#D9BC83"
+		icon = "⚙"
 	case System:
-		color, icon = "14", "◆"
+		color = "#9ABEC9"
+		icon = "◆"
 	case Error:
-		color, icon = "9", "!"
+		color = "#E3A0A0"
+		icon = "!"
 	}
 	return lipgloss.NewStyle().Foreground(lipgloss.Color(color)), icon
 }
@@ -83,14 +88,14 @@ func Header(role Role, name string) string {
 	return style.Bold(true).Render(icon + " " + label)
 }
 
-// Format 将标题与正文分开，相邻消息之间留空行；即使没有颜色也能分辨角色。
+// Format 用彩色标题区分角色，正文保持浅色并缩进，避免整段高饱和颜色影响阅读。
 func Format(e Event, width int) string {
-	style, _ := roleStyle(e.Role)
+	style := lipgloss.NewStyle().Foreground(lipgloss.Color("#D8DEE9"))
 	body := strings.TrimRight(cleanText(e.Text), "\n")
 	if width > 0 {
 		body = ansi.Hardwrap(body, max(1, width-3), true)
 	}
-	return Header(e.Role, e.Name) + "\n" + style.Render("│ "+strings.ReplaceAll(body, "\n", "\n│ ")) + "\n"
+	return Header(e.Role, e.Name) + "\n" + style.Render("  "+strings.ReplaceAll(body, "\n", "\n  ")) + "\n"
 }
 
 // Print 用于普通日志或非交互管道；流式终端界面使用自己的事件队列。

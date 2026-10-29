@@ -72,3 +72,15 @@ func TestConfigSaveAndValidation(t *testing.T) {
 		t.Fatal("未返回已确认的配置")
 	}
 }
+
+// TestExitConfirmation 验证 Esc 不退出也不取消任务，只有 Enter 返回确认。
+func TestExitConfirmation(t *testing.T) {
+	for _, key := range []rune{tea.KeyEscape, tea.KeyEnter} {
+		m := exitModel{running: 2}
+		next, _ := m.Update(tea.KeyPressMsg{Code: key})
+		got := next.(exitModel)
+		if !got.done || got.confirmed != (key == tea.KeyEnter) {
+			t.Fatal("退出确认结果错误")
+		}
+	}
+}

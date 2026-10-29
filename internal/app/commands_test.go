@@ -92,27 +92,28 @@ func TestLocalCommandSessionSwitch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	app := &App{config: cfg, session: active, client: &net.Client{}}
+	app := &App{}
+	app.attachSession(active, cfg, net.Client{})
 	defer app.Close()
 	original := active
 
-	if err := executeCommandForTest(t, app, "/resume missing"); err == nil || app.session != original {
+	if err := executeCommandForTest(t, app, "/resume missing"); err == nil || app.CurrentSession.history != original {
 		t.Fatal("failed restore must preserve current session")
 	}
 	if err := executeCommandForTest(t, app, "/resume "+id); err != nil {
 		t.Fatal(err)
 	}
-	if app.session.SessionID != id || app.session.ToChatCompletionMessage()[0].Content != "先前的问题" {
+	if app.CurrentSession.history.SessionID != id || app.CurrentSession.history.ToChatCompletionMessage()[0].Content != "先前的问题" {
 		t.Fatal("history was not restored")
 	}
-	app.session.AppendUserMessage("继续提问")
-	if err := app.session.Err(); err != nil {
+	app.CurrentSession.history.AppendUserMessage("继续提问")
+	if err := app.CurrentSession.history.Err(); err != nil {
 		t.Fatal(err)
 	}
 	if err := executeCommandForTest(t, app, "/new"); err != nil {
 		t.Fatal(err)
 	}
-	if app.session.SessionID == id || len(app.session.ToChatCompletionMessage()) != 1 {
+	if app.CurrentSession.history.SessionID == id || len(app.CurrentSession.history.ToChatCompletionMessage()) != 1 {
 		t.Fatal("new session retained old context")
 	}
 	restored, err := message.Resume(cfg.ChatsDir, id)

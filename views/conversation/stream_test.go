@@ -34,7 +34,7 @@ func TestPreviewTwoDisplayLines(t *testing.T) {
 func TestMessageRoleAndContent(t *testing.T) {
 	for _, role := range []Role{User, Assistant, Tool, System, Error} {
 		got := ansi.Strip(Format(Event{Role: role, Name: "名字", Text: "第一行\n第二行"}, 80))
-		if !strings.Contains(got, string(role)+" · 名字\n") || !strings.Contains(got, "│ 第一行\n│ 第二行") {
+		if !strings.Contains(got, string(role)+" · 名字\n") || !strings.Contains(got, "  第一行\n  第二行") {
 			t.Fatalf("角色或多行正文缺失: %q", got)
 		}
 	}

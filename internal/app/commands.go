@@ -8,11 +8,13 @@ import (
 type commandName string
 
 const (
-	commandHelpName   commandName = "/help"
-	commandConfigName commandName = "/config"
-	commandResumeName commandName = "/resume"
-	commandNewName    commandName = "/new"
-	commandExitName   commandName = "/exit"
+	commandHelpName     commandName = "/help"
+	commandConfigName   commandName = "/config"
+	commandResumeName   commandName = "/resume"
+	commandNewName      commandName = "/new"
+	commandExitName     commandName = "/exit"
+	commandSessionsName commandName = "/sessions"
+	commandStopName     commandName = "/stop"
 )
 
 // commandHandler 直接持有当前 App 的操作权限，完成命令后只返回错误。
@@ -32,7 +34,9 @@ func builtinCommands() []command {
 		{Name: commandHelpName, Description: "查看内置命令和快捷键", Handler: handleHelp},
 		{Name: commandConfigName, Description: "编辑配置，保存后立即生效", Handler: handleConfig},
 		{Name: commandResumeName, Description: "选择并恢复历史会话", MaxArgs: 1, Handler: handleResume},
-		{Name: commandNewName, Description: "开始新会话，保留当前记录", Handler: handleNew},
+		{Name: commandNewName, Description: "创建并切换新会话，旧任务继续执行", Handler: handleNew},
+		{Name: commandSessionsName, Description: "切换已打开的会话（可带编号或 ID）", MaxArgs: 1, Handler: handleSessions},
+		{Name: commandStopName, Description: "只停止当前会话的任务", Handler: handleStop},
 		{Name: commandExitName, Description: "退出程序", Handler: handleExit},
 	}
 }
@@ -44,7 +48,8 @@ func lookupCommand(query string) (*command, []string, error) {
 		return nil, nil, nil
 	}
 	fields := strings.Fields(text)
-	name, args := fields[0], fields[1:]
+	name := fields[0]
+	args := fields[1:]
 	for _, cmd := range builtinCommands() {
 		if cmd.Name != commandName(name) {
 			continue
@@ -67,5 +72,5 @@ func commandHelp() string {
 	for _, cmd := range builtinCommands() {
 		lines = append(lines, string(cmd.Name)+"  "+cmd.Description)
 	}
-	return strings.Join(lines, "\n") + "\n\nEnter 发送 · Shift+Enter / Ctrl+J 换行\n菜单：↑↓ 选择 · Enter 确认 · Esc 返回\n/config：Tab / ↑↓ 切换字段 · Esc 放弃修改\n/resume <会话ID> 也可直接恢复指定会话"
+	return strings.Join(lines, "\n") + "\n\nEnter 发送 · Shift+Enter / Ctrl+J 换行\nF2 会话列表 · Alt+←/→ 切换 · Alt+N 新会话\nPgUp/PgDown 查看记录 · Ctrl+C 停止当前任务/退出\n菜单：↑↓ 选择 · Enter 确认 · Esc 返回\n/config：Tab / ↑↓ 切换字段 · Esc 放弃修改\n/resume <会话ID> 也可直接恢复指定会话"
 }

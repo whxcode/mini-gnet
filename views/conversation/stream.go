@@ -9,20 +9,13 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/charmbracelet/x/term"
 )
 
 type finished struct{}
 
-// Run 消费应用提供的消息通道，只负责显示和取消，不创建或执行 Agent。
+// Run 是独立的终端流式组件，只负责显示和取消；多会话应用使用 terminal.go。
 // 通道关闭表示 Agent 已发送完本轮输出；业务错误由应用获取并报告。
 func Run(ctx context.Context, cancel context.CancelFunc, events <-chan Event) error {
-	if !term.IsTerminal(os.Stdin.Fd()) || !term.IsTerminal(os.Stdout.Fd()) {
-		for event := range events {
-			Print(event)
-		}
-		return nil
-	}
 	result, err := tea.NewProgram(newStream(ctx, cancel, events), tea.WithInput(os.Stdin), tea.WithOutput(os.Stdout)).Run()
 	if err != nil {
 		return err

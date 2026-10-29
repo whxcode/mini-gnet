@@ -4,7 +4,6 @@ package app
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -14,19 +13,15 @@ import (
 	"github.com/whxcode/mini-gnet/config"
 	"github.com/whxcode/mini-gnet/net"
 	toolsList "github.com/whxcode/mini-gnet/tools/list"
-	"github.com/whxcode/mini-gnet/views/conversation"
-	"github.com/whxcode/mini-gnet/views/input"
-	"github.com/whxcode/mini-gnet/views/message"
 )
 
-// App 持有当前配置和会话，切换时直接更新字段，不向函数传递二级指针。
+// App 管理会话列表和输入循环；记录、配置、客户端都只属于 Session，不在 App 重复保存。
 type App struct {
-	config  config.Config
-	client  *net.Client
-	session *message.TempMessage
-	tools   []openai.Tool
-	input   *input.Reader
-	quit    bool // /exit 的 handler 设置，主循环据此退出。
+	CurrentSession *Session
+	tools          []openai.Tool
+	quit           bool // /exit 的 handler 设置，主循环据此退出。
+	opened         []*Session
+	closed         bool
 }
 
 // New 按顺序加载配置、工具和会话；初始化成功后，调用者负责 Close。
@@ -49,85 +44,81 @@ func New() (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	current := newSession(session, cfg, net.Client{BaseURL: cfg.BaseURL, ApiKey: cfg.APIKey, Model: cfg.Model, HTTP: &http.Client{}})
 	return &App{
-		config: cfg, tools: tools, session: session, input: input.NewReader(),
-		client: &net.Client{BaseURL: cfg.BaseURL, ApiKey: cfg.APIKey, Model: cfg.Model, HTTP: &http.Client{}},
+		CurrentSession: current,
+		opened:         []*Session{current},
+		tools:          tools,
 	}, nil
 }
 
-// Close 关闭退出时的当前会话；之前被替换的会话已在切换时关闭。
-func (a *App) Close() error { return a.session.Close() }
+// Close 先取消并等待所有任务，再关闭每个会话的记录文件；切换时不会关闭旧会话。
+func (a *App) Close() error {
+	if a.closed {
+		return nil
+	}
+	a.closed = true
+	for _, s := range a.opened {
+		s.stop()
+	}
+	var err error
+	for _, s := range a.opened {
+		if task := s.currentTask(); task != nil {
+			<-task.done
+		}
+		err = errors.Join(err, s.history.Close())
+	}
+	return err
+}
 
-// Run 是程序的主线：读输入 → 处理本地命令或执行对话 → 回到输入。
+// Run 专用于交互终端：读输入、执行命令、启动后台任务；管道入口独立放在 pipe.go。
 func (a *App) Run(ctx context.Context) error {
-	conversation.Print(conversation.Event{Role: conversation.System, Text: fmt.Sprintf(
-		"pwd: %s\nbase: %s\nmodel: %s\nsession: %s", a.config.ProjectDir, a.config.BaseURL, a.config.Model, a.session.SessionID)})
 	for !a.quit {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		query, err := a.input.Read()
+		// 1. 读取输入。界面只交出文本，不判断命令或启动任务。
+		query, fromEditor, err := a.readInput(ctx)
 		if errors.Is(err, io.EOF) {
 			return nil
 		}
 		if err != nil {
 			return err
 		}
-
 		if strings.TrimSpace(query) == "" {
 			continue
 		}
 
-		// 主循环拿到 handler 后直接传入 App；命令的修改操作在 handler 内完成。
+		// 2. 命令直接交给 handler，不能写入聊天历史或发送给模型。
 		command, args, err := lookupCommand(query)
 		if err != nil {
-			conversation.Print(conversation.Event{Role: conversation.Error, Text: err.Error()})
+			if fromEditor {
+				a.CurrentSession.draft.Reset()
+			}
+			a.reportError(err)
 			continue
 		}
 		if command != nil {
+			if fromEditor {
+				a.CurrentSession.draft.Reset()
+			}
 			if err := command.Handler(a, args); err != nil {
-				conversation.Print(conversation.Event{Role: conversation.Error, Text: err.Error()})
+				a.reportError(err)
 			}
 			continue
 		}
+		// 3. 在启动 goroutine 前占用本会话、保存提问、捕获配置。
+		// 如果放到 goroutine 里才标记忙碌，快速连续发送可能启动两个任务。
+		session := a.CurrentSession
+		job, err := session.prepareTask(ctx, query, a.tools)
+		if err != nil {
+			a.reportError(err)
+			continue // 保留输入草稿，方便修改或切换会话。
+		}
+		session.draft.Reset()
 
-		err = a.Chat(ctx, query)
-		if errors.Is(err, context.Canceled) {
-			conversation.Print(conversation.Event{Role: conversation.System, Text: "已停止当前任务，可以继续输入。"})
-		} else if err != nil {
-			conversation.Print(conversation.Event{Role: conversation.Error, Text: err.Error()})
-		}
-		if err := a.session.Err(); err != nil {
-			return fmt.Errorf("保存聊天记录失败：%w", err)
-		}
+		// 4. 后台执行任务，主循环随即继续接收输入。
+		go session.RunTask(job)
 	}
 	return nil
-}
-
-// Chat 保存提问，然后直接启动 Agent 和显示界面。这是业务与界面之间唯一的并发边界。
-// Agent 按顺序执行，界面同时监听输出和取消；界面退出后必须等 Agent 结束才能接受新问题。
-func (a *App) Chat(parent context.Context, query string) error {
-	a.session.AppendUserMessage(query)
-	if err := a.session.Err(); err != nil {
-		return err
-	}
-	conversation.Print(conversation.Event{Role: conversation.User, Name: conversation.Username(), Text: query})
-	ctx, cancel := context.WithCancel(parent)
-	defer cancel()
-	events := make(chan conversation.Event, 64)
-	done := make(chan error, 1)
-
-	// 由应用直接运行 Agent；不再把业务函数交给 Bubble Tea 回调执行。
-	go func() {
-		err := runAgentTurn(ctx, a.client, a.session, a.tools, a.config.ProjectDir, events)
-		close(events) // 先发送完所有显示消息，再通知界面本轮结束。
-		done <- err
-	}()
-	viewErr := conversation.Run(ctx, cancel, events)
-	cancel()           // 界面异常退出时也要停止网络请求和工具执行。
-	agentErr := <-done // sendEvent 在取消后不会阻塞；等待本轮彻底结束再返回。
-	if viewErr != nil {
-		return viewErr
-	}
-	return agentErr
 }

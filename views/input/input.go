@@ -2,56 +2,14 @@
 package input
 
 import (
-	"bufio"
-	"errors"
-	"io"
-	"os"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/charmbracelet/x/term"
 	"github.com/whxcode/mini-gnet/views/conversation"
 )
-
-// Reader 在交互终端中使用编辑框，在管道输入时保留按行读取的行为。
-// 只创建一次 Reader，避免每轮重新创建 bufio.Reader 丢掉已经缓冲的输入。
-type Reader struct {
-	interactive bool
-	lines       *bufio.Reader
-}
-
-func NewReader() *Reader {
-	return &Reader{
-		interactive: term.IsTerminal(os.Stdin.Fd()) && term.IsTerminal(os.Stdout.Fd()),
-		lines:       bufio.NewReader(os.Stdin),
-	}
-}
-
-func (r *Reader) Read() (string, error) {
-	if !r.interactive {
-		line, err := r.lines.ReadString('\n')
-		// 管道最后一行即使没有换行符，也要先返回它，下一次再报告 EOF。
-		if errors.Is(err, io.EOF) && len(line) > 0 {
-			err = nil
-		}
-		return line, err
-	}
-
-	// 每次编辑结束后退出 Bubble Tea，恢复终端，再让现有 logger 输出模型结果。
-	// 不使用全屏模式，这样已完成的对话仍保留在终端滚动记录中。
-	result, err := tea.NewProgram(newEditor(), tea.WithInput(os.Stdin), tea.WithOutput(os.Stdout)).Run()
-	if err != nil {
-		return "", err
-	}
-	m := result.(editor)
-	if !m.submitted {
-		return "", io.EOF
-	}
-	return m.text.Value(), nil
-}
 
 // Bubble Tea 的 Model 保存界面状态；Update 处理事件，View 负责显示。
 // textarea 自己管理中文字符、光标、插入、删除及滚动，无需手工按字节操作字符串。
@@ -63,12 +21,13 @@ type editor struct {
 	enhanced  bool
 }
 
-func newEditor() editor {
+// NewTextArea 创建可复用的多行编辑框，各会话各持有一份，保留内容和光标。
+func NewTextArea() textarea.Model {
 	t := textarea.New()
 	t.SetStyles(editorStyles())
-	t.Placeholder = "请输入你的问题，或 /help 查看命令…"
+	t.Placeholder = "输入消息…"
 	t.ShowLineNumbers = false
-	t.Prompt = "│ "
+	t.Prompt = "› "
 	t.CharLimit = 0
 	t.MaxWidth = 0
 	// 由组件按实际显示行数计算高度：手动换行、长文本折行会撑开，删除后会收缩。
@@ -80,11 +39,18 @@ func newEditor() editor {
 	t.SetVirtualCursor(false)
 	t.KeyMap.InsertNewline = key.NewBinding(key.WithKeys("shift+enter", "alt+enter", "ctrl+j"))
 	t.Focus()
-	return editor{text: t, username: conversation.Username()}
+	return t
 }
 
+// newEditor 为单次输入包装编辑框，保留原有终端与管道接口。
+func newEditor() editor {
+	return editor{text: NewTextArea(), username: conversation.Username()}
+}
+
+// Init 单次编辑器不需要后台任务。
 func (m editor) Init() tea.Cmd { return nil }
 
+// Update 处理提交与退出，普通编辑和粘贴由 textarea 处理。
 func (m editor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -115,6 +81,7 @@ func (m editor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// View 绘制单次编辑框及真实终端光标。
 func (m editor) View() tea.View {
 	if m.cancelled {
 		return tea.NewView("")

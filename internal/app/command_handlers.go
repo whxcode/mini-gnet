@@ -2,10 +2,10 @@ package app
 
 import (
 	"os"
+	"strconv"
 
 	"github.com/whxcode/mini-gnet/config"
 	"github.com/whxcode/mini-gnet/views/commands"
-	"github.com/whxcode/mini-gnet/views/conversation"
 	"github.com/whxcode/mini-gnet/views/message"
 )
 
@@ -16,7 +16,8 @@ func handleHelp(_ *App, _ []string) error {
 
 // handleConfig 完成配置编辑、保存和应用；Esc 不修改状态，保存失败保留原客户端和会话。
 func handleConfig(a *App, _ []string) error {
-	edited, err := commands.EditConfig(a.config)
+	current := a.CurrentSession
+	edited, err := commands.EditConfig(a.CurrentSession.config)
 	if err != nil {
 		return err
 	}
@@ -34,7 +35,7 @@ func handleConfig(a *App, _ []string) error {
 	}
 	var replacement *message.TempMessage
 	// 改变目录时开启新会话，避免把新项目的问题混进旧项目的记录。
-	if next.ChatsDir != a.config.ChatsDir || next.ProjectDir != a.config.ProjectDir {
+	if next.ChatsDir != a.CurrentSession.config.ChatsDir || next.ProjectDir != a.CurrentSession.config.ProjectDir {
 		var err error
 		replacement, err = startSession(next)
 		if err != nil {
@@ -47,29 +48,35 @@ func handleConfig(a *App, _ []string) error {
 		}
 		return err
 	}
+	client := a.CurrentSession.client
+	client.BaseURL = next.BaseURL
+	client.ApiKey = next.APIKey
+	client.Model = next.Model
 	if replacement != nil {
-		a.session.Close()
-		a.session = replacement
+		a.attachSession(replacement, next, client)
+	} else {
+		// 只更新当前会话的后续任务；已启动任务持有自己的客户端和目录快照。
+		current.config = next
+		current.client = client
+		a.activateSession(current)
 	}
-	a.config = next
-	a.client.BaseURL, a.client.ApiKey, a.client.Model = next.BaseURL, next.APIKey, next.Model
 	path, _ := config.Path()
-	text := "配置已保存并应用：" + path + "\n模型：" + a.config.Model
+	text := "配置已保存并应用：" + path + "\n模型：" + a.CurrentSession.config.Model
 	if replacement != nil {
 		text += "\n目录已改变，已开启新会话：" + replacement.SessionID
 	}
-	conversation.Print(conversation.Event{Role: conversation.System, Text: text})
+	a.notify(text)
 	return nil
 }
 
-// handleResume 完成历史选择、加载和会话替换；读取成功后才关闭旧会话。
+// handleResume 恢复历史或切回已打开的会话；后台任务和旧记录保持打开。
 func handleResume(a *App, args []string) error {
 	var id string
 	if len(args) == 1 {
 		id = args[0]
 	} else {
 		var err error
-		id, err = commands.SelectSession(a.config.ChatsDir, a.session.SessionID)
+		id, err = commands.SelectSession(a.CurrentSession.config.ChatsDir, a.CurrentSession.history.SessionID)
 		if err != nil {
 			return err
 		}
@@ -78,35 +85,100 @@ func handleResume(a *App, args []string) error {
 			return nil
 		}
 	}
-	if id == a.session.SessionID {
-		conversation.Print(conversation.Event{Role: conversation.System, Text: "当前已经是该会话。"})
+	if opened := a.openedHistory(a.CurrentSession.config.ChatsDir, id); opened != nil {
+		a.activateSession(opened)
 		return nil
 	}
-	next, err := message.Resume(a.config.ChatsDir, id)
+	next, err := message.Resume(a.CurrentSession.config.ChatsDir, id)
 	if err != nil {
 		return err
 	}
-	a.session.Close()
-	a.session = next
-	conversation.Print(conversation.Event{Role: conversation.System, Text: "当前会话：" + next.SessionID})
-	showHistory(next)
+	a.attachSession(next, a.CurrentSession.config, a.CurrentSession.client)
 	return nil
 }
 
 // handleNew 创建并切换新会话；创建失败时继续使用原会话。
 func handleNew(a *App, _ []string) error {
-	next, err := startSession(a.config)
+	next, err := startSession(a.CurrentSession.config)
 	if err != nil {
 		return err
 	}
-	a.session.Close()
-	a.session = next
-	conversation.Print(conversation.Event{Role: conversation.System, Text: "当前会话：" + next.SessionID})
+	a.attachSession(next, a.CurrentSession.config, a.CurrentSession.client)
 	return nil
 }
 
 // handleExit 设置应用退出状态，主循环结束后由 main 统一释放资源。
 func handleExit(a *App, _ []string) error {
+	if count := a.runningCount(); count > 0 {
+		confirmed, err := commands.ConfirmExit(count)
+		if err != nil {
+			return err
+		}
+		if !confirmed {
+			return nil
+		}
+	}
 	a.quit = true
+	return nil
+}
+
+// handleSessions 列出已打开会话或按编号/ID 切换，始终保留旧任务及输入草稿。
+func handleSessions(a *App, args []string) error {
+	current := a.CurrentSession
+	if len(args) == 1 {
+		value := args[0]
+		if value == "next" || value == "prev" {
+			for i, s := range a.opened {
+				if s == current {
+					delta := 1
+					if value == "prev" {
+						delta = -1
+					}
+					a.activateSession(a.opened[(i+delta+len(a.opened))%len(a.opened)])
+					return nil
+				}
+			}
+		}
+		selected, err := a.findSession(value)
+		if err != nil {
+			return err
+		}
+		a.activateSession(selected)
+		return nil
+	}
+	var entries []message.SessionInfo
+	var currentID string
+	for i, s := range a.opened {
+		snapshot := s.snapshot()
+		id := strconv.Itoa(i + 1)
+		if s == current {
+			currentID = id
+		}
+		title := snapshot.Status + " · " + snapshot.Title
+		if snapshot.HasUnreadResult && s != current {
+			title += " [有新结果]"
+		}
+		entries = append(entries, message.SessionInfo{ID: id, Title: title, UpdatedAt: snapshot.UpdatedAt, Count: len(snapshot.Messages)})
+	}
+	id, err := commands.SelectOpenSession(entries, currentID)
+	if err != nil || id == "" {
+		return err
+	}
+	selected, err := a.findSession(id)
+	if err != nil {
+		return err
+	}
+	a.activateSession(selected)
+	return nil
+}
+
+// handleStop 只取消当前会话的任务；其他会话继续执行。
+func handleStop(a *App, _ []string) error {
+	s := a.CurrentSession
+	if !s.snapshot().Running {
+		a.notify("当前会话没有正在执行的任务。")
+		return nil
+	}
+	s.stop()
 	return nil
 }

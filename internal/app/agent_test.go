@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os/exec"
 	"strings"
@@ -59,39 +60,27 @@ func TestPythonTool(t *testing.T) {
 	}
 }
 
-type memoryMessages struct {
-	messages []openai.ChatCompletionMessage
-}
-
-// AppendSystemMessage 在测试会话中追加系统消息。
-func (m *memoryMessages) AppendSystemMessage(s string) {
-	m.messages = append(m.messages, openai.ChatCompletionMessage{Role: "system", Content: s})
-}
-
-// AppendUserMessage 在测试会话中追加用户提问。
-func (m *memoryMessages) AppendUserMessage(s string) {
-	m.messages = append(m.messages, openai.ChatCompletionMessage{Role: "user", Content: s})
-}
-
-// AppendAssistant 在测试会话中保存回答和工具调用。
-func (m *memoryMessages) AppendAssistant(s string, calls []openai.ToolCall) {
-	m.messages = append(m.messages, openai.ChatCompletionMessage{Role: "assistant", Content: s, ToolCalls: calls})
-}
-
-// AppendTool 在测试会话中关联工具调用 ID 与执行结果。
-func (m *memoryMessages) AppendTool(id, s string) {
-	m.messages = append(m.messages, openai.ChatCompletionMessage{Role: "tool", ToolCallID: id, Content: s})
-}
-
-// ToChatCompletionMessage 返回测试会话的消息副本，避免临时重试提示污染原历史。
-func (m *memoryMessages) ToChatCompletionMessage() []openai.ChatCompletionMessage {
-	return append([]openai.ChatCompletionMessage(nil), m.messages...)
+// agentTaskForTest 使用真实临时记录与预设响应，直接执行 Session.RunTask 而不经过界面。
+func agentTaskForTest(t *testing.T, c *scriptedClient) (*Session, *task) {
+	t.Helper()
+	a := terminalTestApp(t)
+	session := a.CurrentSession
+	job, err := session.prepareTask(context.Background(), "测试提问", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job.client = c
+	c.session = session
+	return session, job
 }
 
 type scriptedClient struct {
 	t        *testing.T
 	answers  []net.StreamResult
 	requests [][]openai.ChatCompletionMessage
+	session  *Session
+	streams  []*scriptedStream
+	readErr  error
 }
 
 // OpenStream 用预设回答替代网络请求，并保存请求用于验证重试上下文。
@@ -102,19 +91,34 @@ func (c *scriptedClient) OpenStream(_ context.Context, messages []openai.ChatCom
 		c.t.Fatal("unexpected extra model request")
 	}
 	c.requests = append(c.requests, messages)
-	return &scriptedStream{answer: c.answers[index], text: []rune(c.answers[index].Text)}, nil
+	if index > 0 && !c.streams[index-1].closed {
+		c.t.Fatal("上轮响应流未释放就开启下一轮请求")
+	}
+	stream := &scriptedStream{answer: c.answers[index], text: []rune(c.answers[index].Text), session: c.session, t: c.t, readErr: c.readErr}
+	c.streams = append(c.streams, stream)
+	return stream, nil
 }
 
 type scriptedStream struct {
-	answer net.StreamResult
-	text   []rune
-	index  int
-	closed bool
+	answer  net.StreamResult
+	text    []rune
+	index   int
+	closed  bool
+	session *Session
+	t       *testing.T
+	readErr error
 }
 
 // Next 每次提供一个字符，验证显示发生在完整回答之前。
 func (s *scriptedStream) Next() (string, error) {
+	// 再读取下一个字符前，上一个字符必须已经出现在会话快照中。
+	if got := s.session.snapshot().StreamText; got != string(s.text[:s.index]) {
+		s.t.Fatalf("流式片段没有及时更新会话：%q", got)
+	}
 	if s.index == len(s.text) {
+		if s.readErr != nil {
+			return "", s.readErr
+		}
 		return "", io.EOF
 	}
 	text := string(s.text[s.index])
@@ -131,30 +135,21 @@ func (s *scriptedStream) Close() error { s.closed = true; return nil }
 // TestAgentStreamsBeforeFinalMessage 验证文字先逐段显示，随后只提交一次完整回答。
 func TestAgentStreamsBeforeFinalMessage(t *testing.T) {
 	c := &scriptedClient{t: t, answers: []net.StreamResult{{Text: "你好，世界"}}}
-	events := make(chan conversation.Event, 64)
-	err := runAgentTurn(context.Background(), c, &memoryMessages{}, nil, t.TempDir(), events)
-	close(events)
-	if err != nil {
+	session, job := agentTaskForTest(t, c)
+	if err := session.RunTask(job); err != nil {
 		t.Fatal(err)
 	}
-	var chunks string
 	finalCount := 0
-	for e := range events {
-		if e.Kind == conversation.Delta {
-			if finalCount != 0 {
-				t.Fatal("完整回答出现后才收到流式片段")
-			}
-			chunks += e.Text
-		}
+	for _, e := range session.snapshot().Messages {
 		if e.Kind == conversation.Message && e.Role == conversation.Assistant {
 			finalCount++
-			if e.Text != chunks {
-				t.Fatalf("流式文本与完整回答不一致: %q / %q", chunks, e.Text)
+			if e.Text != "你好，世界" {
+				t.Fatalf("完整回答不一致: %q", e.Text)
 			}
 		}
 	}
-	if finalCount != 1 || chunks != "你好，世界" {
-		t.Fatalf("回答重复或流式输出丢失: final=%d, chunks=%q", finalCount, chunks)
+	if finalCount != 1 || session.snapshot().StreamText != "" || !c.streams[0].closed {
+		t.Fatal("回答重复、流式状态未清空，或响应未关闭")
 	}
 }
 
@@ -178,9 +173,8 @@ func TestAgentRepairsPythonAfterTextOnlyReply(t *testing.T) {
 		pythonCall("import os\nprint(os.cpu_count())"),
 		{Text: "已获取 CPU 数量。"},
 	}}
-	m := &memoryMessages{}
-	m.AppendUserMessage("使用临时 Python 获取系统信息")
-	if err := runAgentTurn(context.Background(), c, m, nil, t.TempDir(), nil); err != nil {
+	session, job := agentTaskForTest(t, c)
+	if err := session.RunTask(job); err != nil {
 		t.Fatal(err)
 	}
 	if len(c.requests) != 4 {
@@ -210,7 +204,8 @@ func TestAgentRetryLimits(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := &scriptedClient{t: t, answers: tc.answers}
-			err := runAgentTurn(context.Background(), c, &memoryMessages{}, nil, t.TempDir(), nil)
+			session, job := agentTaskForTest(t, c)
+			err := session.RunTask(job)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -221,7 +216,51 @@ func TestAgentRetryLimits(t *testing.T) {
 // TestAgentOrdinaryAnswerDoesNotRetry 验证普通回答结束后不会无故继续请求模型。
 func TestAgentOrdinaryAnswerDoesNotRetry(t *testing.T) {
 	c := &scriptedClient{t: t, answers: []net.StreamResult{{Text: "Python 是一种编程语言。"}}}
-	if err := runAgentTurn(context.Background(), c, &memoryMessages{}, nil, t.TempDir(), nil); err != nil {
+	session, job := agentTaskForTest(t, c)
+	if err := session.RunTask(job); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestSessionCanContinueAfterStreamFailure 验证中途断流会关闭响应、保留未完成显示，且不阻止同一会话的下一任务。
+func TestSessionCanContinueAfterStreamFailure(t *testing.T) {
+	failure := errors.New("连接中断")
+	c := &scriptedClient{t: t, readErr: failure, answers: []net.StreamResult{{Text: "部分回答"}, {Text: "第二次完成"}}}
+	session, first := agentTaskForTest(t, c)
+	if err := session.RunTask(first); !errors.Is(err, failure) {
+		t.Fatalf("未返回流错误：%v", err)
+	}
+	if err := waitTask(t, first); !errors.Is(err, failure) {
+		t.Fatalf("失败任务没有正确通知结束：%v", err)
+	}
+	state := session.snapshot()
+	if state.Running || state.Status != "失败" || !c.streams[0].closed {
+		t.Fatal("流失败后仍在执行，或连接没有关闭")
+	}
+	foundPartial := false
+	for _, event := range state.Messages {
+		if event.Name == "未完成" && event.Text == "部分回答" {
+			foundPartial = true
+		}
+	}
+	if !foundPartial {
+		t.Fatal("中断前已收到的文字丢失")
+	}
+	for _, message := range session.history.ToChatCompletionMessage() {
+		if message.Role == "assistant" {
+			t.Fatal("部分回答被保存为完整历史")
+		}
+	}
+	c.readErr = nil
+	second, err := session.prepareTask(context.Background(), "继续", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second.client = c
+	if err := session.RunTask(second); err != nil {
+		t.Fatal(err)
+	}
+	if first == second || session.snapshot().Status != "已完成" || !c.streams[1].closed {
+		t.Fatal("下一轮任务未独立完成")
 	}
 }

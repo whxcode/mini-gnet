@@ -64,6 +64,8 @@ func (m helpModel) View() tea.View {
 }
 
 type resumeModel struct {
+	title    string
+	action   string
 	sessions []message.SessionInfo
 	current  string
 	cursor   int
@@ -76,7 +78,7 @@ type resumeModel struct {
 
 // newResume 初始化历史选择菜单，不打开或修改任何会话。
 func newResume(sessions []message.SessionInfo, current string) resumeModel {
-	return resumeModel{sessions: sessions, current: current, width: 78, height: 24}
+	return resumeModel{title: "恢复会话", action: "恢复", sessions: sessions, current: current, width: 78, height: 24}
 }
 
 // Init 历史列表已由调用方读取，无需启动额外任务。
@@ -119,7 +121,7 @@ func (m resumeModel) View() tea.View {
 	if m.done {
 		return tea.NewView("")
 	}
-	lines := []string{accent.Render("◆ 恢复会话"), ""}
+	lines := []string{accent.Render("◆ " + m.title), ""}
 	if len(m.sessions) == 0 {
 		lines = append(lines, "当前聊天记录目录中没有可恢复的会话。")
 	} else {
@@ -151,6 +153,6 @@ func (m resumeModel) View() tea.View {
 	if m.problem != "" {
 		lines = append(lines, bad.Render(clip(m.problem, m.width-2)))
 	}
-	lines = append(lines, muted.Render("↑↓ 选择 · Enter 恢复 · Esc 返回"))
+	lines = append(lines, muted.Render("↑↓ 选择 · Enter "+m.action+" · Esc 返回"))
 	return tea.NewView(panel.Width(m.width).Render(strings.Join(lines, "\n")))
 }

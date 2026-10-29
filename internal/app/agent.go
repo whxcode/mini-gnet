@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/sashabaranov/go-openai"
-	imp "github.com/whxcode/mini-gnet/interface"
 	"github.com/whxcode/mini-gnet/net"
 	"github.com/whxcode/mini-gnet/views/conversation"
 )
@@ -20,56 +19,99 @@ type chatClient interface {
 	OpenStream(context.Context, []openai.ChatCompletionMessage, []openai.Tool) (net.ResponseStream, error)
 }
 
-// runAgentTurn 顺序执行一轮任务：请求模型、读取回答、保存消息、执行工具，再进入下一轮。
-// Python 重试状态只属于当前任务，events 仅用于通知界面，不控制业务执行。
-func runAgentTurn(ctx context.Context, client chatClient, msg imp.Message, tools []openai.Tool, projectDir string, events chan<- conversation.Event) error {
+// RunTask 由主循环启动：按顺序请求模型、读取流、保存回答、执行工具，再决定是否继续。
+// 这个函数会阻塞到任务结束；交互模式用 go 调用，管道模式直接调用。
+// job 已由 prepareTask 占用会话并捕获配置，这里不读取 App，也不再启动协程或转发 channel。
+func (s *Session) RunTask(job *task) (err error) {
+	// 无论下面在哪一步 return，都用返回的 err 更新状态并关闭 done，避免退出时一直等待。
+	defer func() { err = s.finishTask(job, err) }()
+	ctx := job.ctx
+	client := job.client
+	tools := job.tools
+	projectDir := job.projectDir
+	history := s.history
 	pythonPending := false
-	failures, reminders := 0, 0
+	failures := 0
+	reminders := 0
 	lastFailure := ""
 	for step := 0; step < 8; step++ {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		messages := msg.ToChatCompletionMessage()
+		messages := history.ToChatCompletionMessage()
 		if pythonPending {
 			messages = append(messages, openai.ChatCompletionMessage{
 				Role:    openai.ChatMessageRoleSystem,
 				Content: "上次 run_python 执行失败，用户请求尚未完成。请根据以下错误修正完整 Python 源码，立即再次调用 run_python。不能仅解释错误、展示代码或让用户手动执行。NameError 表示名称未定义，例如使用 os.cpu_count() 前必须实际加入 import os。只修复原任务，不扩大操作范围。\n实际错误：\n" + lastFailure,
 			})
 		}
-		sendEvent(ctx, events, conversation.Event{Kind: conversation.Status, Role: conversation.Assistant, Text: "正在生成 · Ctrl+C 停止"})
-		// 主动请求并读取回答，读完后再决定是否执行工具。
-		answer, err := readAnswer(ctx, client, messages, tools, events)
+		s.updateDisplay(conversation.Event{Kind: conversation.Status, Role: conversation.Assistant, Text: "正在生成 · Ctrl+C 停止"})
+		// 1. 发起本轮模型请求，直接拿到可读取的响应流。
+		stream, err := client.OpenStream(ctx, messages, tools)
 		if err != nil {
 			return err
 		}
-		msg.AppendAssistant(answer.Text, answer.ToolCalls)
-		if strings.TrimSpace(answer.Text) != "" {
-			sendEvent(ctx, events, conversation.Event{Role: conversation.Assistant, Text: answer.Text})
-		}
-		if len(answer.ToolCalls) == 0 {
-			if pythonPending {
-				if reminders >= 2 {
-					return fmt.Errorf("Python 任务未完成：模型仍未调用工具修复错误。最后的执行结果：\n%s", lastFailure)
-				}
-				reminders++
-				sendEvent(ctx, events, conversation.Event{Role: conversation.System, Text: "Python 尚未成功，要求模型继续修复并执行。"})
-				continue
+
+		// 2. 顺序读取片段，直接更新本会话；不经过界面回调或消息中转协程。
+		for {
+			if err = ctx.Err(); err != nil {
+				break
 			}
+			var chunk string
+			chunk, err = stream.Next()
+			if err != nil {
+				break
+			}
+			if chunk != "" {
+				s.updateDisplay(conversation.Event{Kind: conversation.Delta, Role: conversation.Assistant, Text: chunk})
+			}
+		}
+		// 每轮读完就关闭连接，避免把所有连接的释放拖到整个任务结束。
+		stream.Close()
+		if !errors.Is(err, io.EOF) {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		answer := stream.Result()
+
+		// 3. 保存完整回答；未读完的响应不能作为完整消息写入历史。
+		history.AppendAssistant(answer.Text, answer.ToolCalls)
+		if err := history.Err(); err != nil {
+			return err
+		}
+		if strings.TrimSpace(answer.Text) != "" {
+			s.updateDisplay(conversation.Event{Role: conversation.Assistant, Text: answer.Text})
+		}
+		// 4. 没有工具调用就结束；Python 失败时保留有限次修复提醒。
+		if len(answer.ToolCalls) == 0 && !pythonPending {
 			return nil
 		}
+		if len(answer.ToolCalls) == 0 {
+			if reminders >= 2 {
+				return fmt.Errorf("Python 任务未完成：模型仍未调用工具修复错误。最后的执行结果：\n%s", lastFailure)
+			}
+			reminders++
+			s.updateDisplay(conversation.Event{Role: conversation.System, Text: "Python 尚未成功，要求模型继续修复并执行。"})
+			continue
+		}
+		// 5. 按模型给出的顺序执行工具，并把真实结果保存到下一轮上下文。
 		batchFailed := false
 		pythonSucceeded := false
 		for _, call := range answer.ToolCalls {
-			sendEvent(ctx, events, conversation.Event{Kind: conversation.Status, Role: conversation.Tool, Name: call.Function.Name, Text: "正在执行 · Ctrl+C 停止"})
-			sendEvent(ctx, events, conversation.Event{Role: conversation.Tool, Name: call.Function.Name + " · 调用", Text: toolInputText(call.Function.Name, call.Function.Arguments)})
+			s.updateDisplay(conversation.Event{Kind: conversation.Status, Role: conversation.Tool, Name: call.Function.Name, Text: "正在执行 · Ctrl+C 停止"})
+			s.updateDisplay(conversation.Event{Role: conversation.Tool, Name: call.Function.Name + " · 调用", Text: toolInputText(call.Function.Name, call.Function.Arguments)})
 			// 即使耗尽重试次数，也要为每个工具调用保存结果，保持协议完整。
 			output := "Python 重试次数已用尽，本次工具调用未执行。"
 			if failures < 3 {
 				output = executeTool(ctx, projectDir, call.Function.Name, call.Function.Arguments)
 			}
-			msg.AppendTool(call.ID, output)
-			sendEvent(ctx, events, conversation.Event{Role: conversation.Tool, Name: call.Function.Name + " · 结果", Text: toolOutputText(call.Function.Name, output)})
+			history.AppendTool(call.ID, output)
+			if err := history.Err(); err != nil {
+				return err
+			}
+			s.updateDisplay(conversation.Event{Role: conversation.Tool, Name: call.Function.Name + " · 结果", Text: toolOutputText(call.Function.Name, output)})
 			if call.Function.Name != "run_python" {
 				continue
 			}
@@ -82,11 +124,12 @@ func runAgentTurn(ctx context.Context, client chatClient, msg imp.Message, tools
 				failures++
 				batchFailed = true
 				lastFailure = output
-				sendEvent(ctx, events, conversation.Event{Role: conversation.System, Text: "Python 执行失败，准备修复。"})
+				s.updateDisplay(conversation.Event{Role: conversation.System, Text: "Python 执行失败，准备修复。"})
 			} else {
 				pythonSucceeded = true
 			}
 		}
+		// 6. 更新重试状态，然后回到循环顶部重新请求模型。
 		if batchFailed {
 			pythonPending = true
 		} else if pythonSucceeded {
@@ -97,39 +140,4 @@ func runAgentTurn(ctx context.Context, client chatClient, msg imp.Message, tools
 		}
 	}
 	return fmt.Errorf("达到本轮 8 次模型调用上限，任务尚未完成")
-}
-
-// readAnswer 主动读取模型输出，逐段发送给界面；网络错误或取消时释放连接。
-func readAnswer(ctx context.Context, client chatClient, messages []openai.ChatCompletionMessage, tools []openai.Tool, events chan<- conversation.Event) (net.StreamResult, error) {
-	stream, err := client.OpenStream(ctx, messages, tools)
-	if err != nil {
-		return net.StreamResult{}, err
-	}
-	defer stream.Close()
-	for {
-		if err := ctx.Err(); err != nil {
-			return net.StreamResult{}, err
-		}
-		text, err := stream.Next()
-		if errors.Is(err, io.EOF) {
-			return stream.Result(), nil
-		}
-		if err != nil {
-			return net.StreamResult{}, err
-		}
-		if text != "" {
-			sendEvent(ctx, events, conversation.Event{Kind: conversation.Delta, Role: conversation.Assistant, Text: text})
-		}
-	}
-}
-
-// sendEvent 发送显示消息；取消时停止等待界面。nil 通道用于不需要显示的单元测试。
-func sendEvent(ctx context.Context, events chan<- conversation.Event, event conversation.Event) {
-	if events == nil {
-		return
-	}
-	select {
-	case events <- event:
-	case <-ctx.Done():
-	}
 }

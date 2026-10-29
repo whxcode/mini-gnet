@@ -1,8 +1,6 @@
 package input
 
 import (
-	"bufio"
-	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -96,18 +94,5 @@ func TestTerminalKeySequences(t *testing.T) {
 				t.Fatalf("终端序列解码结果: %q, submitted=%v", m.text.Value(), m.submitted)
 			}
 		})
-	}
-}
-
-func TestPipeInputKeepsBufferedLines(t *testing.T) {
-	r := &Reader{lines: bufio.NewReader(strings.NewReader("第一条\n第二条"))}
-	for _, want := range []string{"第一条\n", "第二条"} {
-		got, err := r.Read()
-		if err != nil || got != want {
-			t.Fatalf("管道输入: got=%q, err=%v", got, err)
-		}
-	}
-	if _, err := r.Read(); !errors.Is(err, io.EOF) {
-		t.Fatalf("读取结束应返回 EOF，实际为 %v", err)
 	}
 }
