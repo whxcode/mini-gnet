@@ -54,7 +54,7 @@ func TestRunPipeToolRoundTrip(t *testing.T) {
 	if requests.Load() != 2 || len(history) != 5 || history[4].Content != "已获取目录" {
 		t.Fatalf("unexpected history: %+v", history)
 	}
-	if err := a.CurrentSession.history.Err(); err != nil {
+	if err := a.CurrentSession.currentTask().err; err != nil {
 		t.Fatal(err)
 	}
 }

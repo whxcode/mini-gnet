@@ -2,6 +2,7 @@ package message
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,16 +12,25 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
+// TestResumePreservesToolsAndAppends 验证保存、恢复和继续追加后工具调用关联仍然完整。
 func TestResumePreservesToolsAndAppends(t *testing.T) {
 	dir := t.TempDir()
 	m, err := New(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.AppendSystemMessage("system")
-	m.AppendUserMessage("第一条问题")
-	m.AppendAssistant("", []openai.ToolCall{{ID: "call-1", Type: "function", Function: openai.FunctionCall{Name: "run_python", Arguments: `{"code":"print(1)"}`}}})
-	m.AppendTool("call-1", strings.Repeat("长工具结果", 20000))
+	if err := m.AppendSystemMessage("system"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.AppendUserMessage("第一条问题"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.AppendAssistant("", []openai.ToolCall{{ID: "call-1", Type: "function", Function: openai.FunctionCall{Name: "run_python", Arguments: `{"code":"print(1)"}`}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.AppendTool("call-1", strings.Repeat("长工具结果", 20000)); err != nil {
+		t.Fatal(err)
+	}
 	id := m.SessionID
 	want := m.ToChatCompletionMessage()
 	if err := m.Close(); err != nil {
@@ -35,8 +45,7 @@ func TestResumePreservesToolsAndAppends(t *testing.T) {
 	if string(a) != string(b) {
 		t.Fatal("恢复丢失历史正文或 tool_calls 关联")
 	}
-	resumed.AppendUserMessage("继续上一条")
-	if err := resumed.Err(); err != nil {
+	if err := resumed.AppendUserMessage("继续上一条"); err != nil {
 		t.Fatal(err)
 	}
 	resumed.Close()
@@ -50,6 +59,7 @@ func TestResumePreservesToolsAndAppends(t *testing.T) {
 	}
 }
 
+// TestHistoryListAndCorruption 验证列表排序、损坏记录及缺少末尾换行的兼容行为。
 func TestHistoryListAndCorruption(t *testing.T) {
 	dir := t.TempDir()
 	for _, id := range []string{"old", "new"} {
@@ -88,10 +98,39 @@ func TestHistoryListAndCorruption(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.AppendAssistant("回答", nil)
+	if err := m.AppendAssistant("回答", nil); err != nil {
+		t.Fatal(err)
+	}
 	m.Close()
 	got, _, err := readHistory(filepath.Join(dir, "new.jsonl"))
 	if err != nil || len(got) != 2 {
 		t.Fatalf("无末尾换行的文件追加失败: %v", err)
+	}
+}
+
+// TestAppendReturnsWriteError 验证各追加入口直接返回写入失败，失败消息不会进入模型上下文。
+func TestAppendReturnsWriteError(t *testing.T) {
+	m, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.AppendUserMessage("已保存"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, err := range []error{
+		m.AppendSystemMessage("system"),
+		m.AppendUserMessage("user"),
+		m.AppendAssistant("assistant", nil),
+		m.AppendTool("call-1", "tool"),
+	} {
+		if !errors.Is(err, os.ErrClosed) {
+			t.Fatalf("应直接返回文件已关闭错误，得到 %v", err)
+		}
+	}
+	if got := m.ToChatCompletionMessage(); len(got) != 1 || got[0].Content != "已保存" {
+		t.Fatalf("保存失败不应更新内存消息：%+v", got)
 	}
 }

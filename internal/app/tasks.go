@@ -41,8 +41,7 @@ func (s *Session) prepareTask(parent context.Context, query string, tools []open
 	}
 
 	// 2. 先保存问题。保存失败就返回，不请求模型。
-	s.history.AppendUserMessage(query)
-	if err := s.history.Err(); err != nil {
+	if err := s.history.AppendUserMessage(query); err != nil {
 		return nil, err
 	}
 
@@ -83,11 +82,10 @@ func (s *Session) prepareTask(parent context.Context, query string, tools []open
 func (s *Session) finishTask(job *task, runErr error) error {
 	defer job.cancel() // 释放本次 context 的资源，正常完成也需要清理。
 
-	// 1. 以实际取消状态和记录写入错误判断本轮是否成功。
+	// 1. 写入错误已由 RunTask 直接返回；这里只补充任务取消的状态。
 	if job.ctx.Err() != nil {
 		runErr = job.ctx.Err()
 	}
-	runErr = errors.Join(runErr, s.history.Err())
 
 	s.mu.Lock()
 	defer s.mu.Unlock()

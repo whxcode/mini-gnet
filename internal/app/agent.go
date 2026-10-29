@@ -34,6 +34,7 @@ func (s *Session) RunTask(job *task) (err error) {
 	failures := 0
 	reminders := 0
 	lastFailure := ""
+
 	for step := 0; step < 8; step++ {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -53,6 +54,7 @@ func (s *Session) RunTask(job *task) (err error) {
 		}
 
 		// 2. 顺序读取片段，直接更新本会话；不经过界面回调或消息中转协程。
+		// 一直读取 delta 直到 os.EOF 表示读取完毕
 		for {
 			if err = ctx.Err(); err != nil {
 				break
@@ -66,60 +68,75 @@ func (s *Session) RunTask(job *task) (err error) {
 				s.updateDisplay(conversation.Event{Kind: conversation.Delta, Role: conversation.Assistant, Text: chunk})
 			}
 		}
+
 		// 每轮读完就关闭连接，避免把所有连接的释放拖到整个任务结束。
 		stream.Close()
 		if !errors.Is(err, io.EOF) {
 			return err
 		}
+
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+
+		// 获取完整的回答和工具调用；未读完的响应不能作为完整消息写入历史。
 		answer := stream.Result()
 
 		// 3. 保存完整回答；未读完的响应不能作为完整消息写入历史。
-		history.AppendAssistant(answer.Text, answer.ToolCalls)
-		if err := history.Err(); err != nil {
+		if err := history.AppendAssistant(answer.Text, answer.ToolCalls); err != nil {
 			return err
 		}
+
+		// 回显完整回答，避免模型只输出工具调用而界面没有任何显示。
 		if strings.TrimSpace(answer.Text) != "" {
 			s.updateDisplay(conversation.Event{Role: conversation.Assistant, Text: answer.Text})
 		}
+
 		// 4. 没有工具调用就结束；Python 失败时保留有限次修复提醒。
 		if len(answer.ToolCalls) == 0 && !pythonPending {
 			return nil
 		}
+
 		if len(answer.ToolCalls) == 0 {
 			if reminders >= 2 {
 				return fmt.Errorf("Python 任务未完成：模型仍未调用工具修复错误。最后的执行结果：\n%s", lastFailure)
 			}
+
 			reminders++
 			s.updateDisplay(conversation.Event{Role: conversation.System, Text: "Python 尚未成功，要求模型继续修复并执行。"})
 			continue
 		}
+
 		// 5. 按模型给出的顺序执行工具，并把真实结果保存到下一轮上下文。
 		batchFailed := false
 		pythonSucceeded := false
+
 		for _, call := range answer.ToolCalls {
 			s.updateDisplay(conversation.Event{Kind: conversation.Status, Role: conversation.Tool, Name: call.Function.Name, Text: "正在执行 · Ctrl+C 停止"})
 			s.updateDisplay(conversation.Event{Role: conversation.Tool, Name: call.Function.Name + " · 调用", Text: toolInputText(call.Function.Name, call.Function.Arguments)})
 			// 即使耗尽重试次数，也要为每个工具调用保存结果，保持协议完整。
 			output := "Python 重试次数已用尽，本次工具调用未执行。"
+
 			if failures < 3 {
 				output = executeTool(ctx, projectDir, call.Function.Name, call.Function.Arguments)
 			}
-			history.AppendTool(call.ID, output)
-			if err := history.Err(); err != nil {
+
+			if err := history.AppendTool(call.ID, output); err != nil {
 				return err
 			}
+
 			s.updateDisplay(conversation.Event{Role: conversation.Tool, Name: call.Function.Name + " · 结果", Text: toolOutputText(call.Function.Name, output)})
+
 			if call.Function.Name != "run_python" {
 				continue
 			}
+
 			var result struct {
 				ExitCode *int   `json:"exit_code"`
 				Error    string `json:"error"`
 				Stdout   string `json:"stdout"`
 			}
+
 			if err := json.Unmarshal([]byte(output), &result); err != nil || result.ExitCode == nil || *result.ExitCode != 0 || result.Error != "" {
 				failures++
 				batchFailed = true
@@ -129,6 +146,7 @@ func (s *Session) RunTask(job *task) (err error) {
 				pythonSucceeded = true
 			}
 		}
+
 		// 6. 更新重试状态，然后回到循环顶部重新请求模型。
 		if batchFailed {
 			pythonPending = true
@@ -139,5 +157,6 @@ func (s *Session) RunTask(job *task) (err error) {
 			return fmt.Errorf("Python 任务未完成：执行失败 3 次，已停止重试。最后的执行结果：\n%s", lastFailure)
 		}
 	}
+
 	return fmt.Errorf("达到本轮 8 次模型调用上限，任务尚未完成")
 }

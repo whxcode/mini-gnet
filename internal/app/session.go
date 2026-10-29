@@ -130,8 +130,7 @@ func startSession(cfg config.Config) (*message.TempMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	session.AppendSystemMessage(prompt.CheckAgentPrompt(cfg.ProjectDir))
-	if err := session.Err(); err != nil {
+	if err := session.AppendSystemMessage(prompt.CheckAgentPrompt(cfg.ProjectDir)); err != nil {
 		session.Close()
 		return nil, err
 	}

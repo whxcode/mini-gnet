@@ -19,6 +19,24 @@ import (
 	"github.com/whxcode/mini-gnet/net"
 )
 
+// TestPrepareTaskStopsOnHistoryError 验证提问保存失败就直接返回，不创建任务或标记执行中。
+func TestPrepareTaskStopsOnHistoryError(t *testing.T) {
+	a := terminalTestApp(t)
+	s := a.CurrentSession
+	before := s.snapshot()
+	if err := s.history.Close(); err != nil {
+		t.Fatal(err)
+	}
+	job, err := s.prepareTask(context.Background(), "不能保存的提问", nil)
+	if !errors.Is(err, os.ErrClosed) || job != nil {
+		t.Fatalf("保存失败应直接终止准备任务：job=%v, err=%v", job, err)
+	}
+	after := s.snapshot()
+	if after.Running || s.currentTask() != nil || len(after.Messages) != len(before.Messages) {
+		t.Fatal("保存失败后不应启动任务或显示提问已提交")
+	}
+}
+
 // TestBackgroundCompletesWithoutSwitchBack 验证不切回且不刷新界面，后台仍能收完长流并写入磁盘。
 func TestBackgroundCompletesWithoutSwitchBack(t *testing.T) {
 	started := make(chan string, 1)

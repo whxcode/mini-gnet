@@ -73,7 +73,9 @@ func TestPSKeepsSessionState(t *testing.T) {
 	a := terminalTestApp(t)
 	first := a.CurrentSession
 	first.draft.SetValue("未发送的草稿")
-	first.history.AppendUserMessage("已有提问")
+	if err := first.history.AppendUserMessage("已有提问"); err != nil {
+		t.Fatal(err)
+	}
 	if err := executeCommandForTest(t, a, "/new"); err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +114,9 @@ func TestLocalCommandSessionSwitch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	history.AppendUserMessage("先前的问题")
+	if err := history.AppendUserMessage("先前的问题"); err != nil {
+		t.Fatal(err)
+	}
 	id := history.SessionID
 	if err := history.Close(); err != nil {
 		t.Fatal(err)
@@ -135,8 +139,7 @@ func TestLocalCommandSessionSwitch(t *testing.T) {
 	if app.CurrentSession.history.SessionID != id || app.CurrentSession.history.ToChatCompletionMessage()[0].Content != "先前的问题" {
 		t.Fatal("history was not restored")
 	}
-	app.CurrentSession.history.AppendUserMessage("继续提问")
-	if err := app.CurrentSession.history.Err(); err != nil {
+	if err := app.CurrentSession.history.AppendUserMessage("继续提问"); err != nil {
 		t.Fatal(err)
 	}
 	if err := executeCommandForTest(t, app, "/new"); err != nil {
