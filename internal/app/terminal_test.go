@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -12,6 +13,46 @@ import (
 	"github.com/whxcode/mini-gnet/net"
 	"github.com/whxcode/mini-gnet/views/conversation"
 )
+
+// TestSessionGridFitsTerminal 验证多会话栅格在窄窗口和分页后不溢出，当前卡片与输入光标保持可见。
+func TestSessionGridFitsTerminal(t *testing.T) {
+	a := terminalTestApp(t)
+	for i := 1; i < 12; i++ {
+		if err := executeCommandForTest(t, a, "/new"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, session := range a.opened {
+		session.title = strings.Repeat("测试长标题是否撑开卡片", 5)
+		session.hasUnreadResult = true
+	}
+	for _, width := range []int{32, 80, 120} {
+		for _, height := range []int{24, 40} {
+			for _, number := range []int{1, 7, 12} {
+				if err := executeCommandForTest(t, a, fmt.Sprintf("/ps %d", number)); err != nil {
+					t.Fatal(err)
+				}
+				m := newTerminal(a, context.Background())
+				m = updateTerminal(m, tea.WindowSizeMsg{Width: width, Height: height})
+				m.session.draft.SetValue("编辑中")
+				view := m.View()
+				plain := ansi.Strip(view.Content)
+				lines := strings.Split(plain, "\n")
+				for _, line := range lines {
+					if ansi.StringWidth(line) > width {
+						t.Fatalf("栅格超出 %d 列：%q", width, line)
+					}
+				}
+				if len(lines) > height || !strings.Contains(plain, fmt.Sprintf("%d ○ 空闲 · 当前", number)) {
+					t.Fatalf("%dx%d 会话 %d 的高度或当前卡片错误：\n%s", width, height, number, plain)
+				}
+				if view.Cursor == nil || view.Cursor.Position.Y >= len(lines) || !strings.Contains(lines[view.Cursor.Position.Y], "编辑中") {
+					t.Fatal("栅格改变后输入光标偏移")
+				}
+			}
+		}
+	}
+}
 
 // TestTerminalGrowsWithContent 验证短对话不会占满屏幕，换行后输入区自然增长且光标位置正确。
 func TestTerminalGrowsWithContent(t *testing.T) {

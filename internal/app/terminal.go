@@ -161,7 +161,7 @@ func (m terminalModel) backgroundNotices(width, limit int) []string {
 		}
 		state := s.snapshot()
 		if state.HasUnreadResult {
-			notices = append(notices, displayLine(fmt.Sprintf("◆ 会话 %d %s · /sessions %d 查看 · %s", i+1, state.Status, i+1, state.Title), width))
+			notices = append(notices, displayLine(fmt.Sprintf("◆ 会话 %d %s · /ps %d 查看 · %s", i+1, state.Status, i+1, state.Title), width))
 		}
 	}
 	if len(notices) > limit {
@@ -180,37 +180,18 @@ func (m terminalModel) View() tea.View {
 	width := max(4, m.width-4) // 外层左右各留两列，不让正文紧贴终端边缘。
 
 	currentNumber := 1
-	var tabs []string
 	for i, session := range m.app.opened {
-		state := session.snapshot()
-		label := fmt.Sprintf("%d %s", i+1, state.Status)
 		if session == m.session {
 			currentNumber = i + 1
-			label = "[" + label + "]"
-		} else if state.HasUnreadResult {
-			label += " · 新结果"
 		}
-		tabs = append(tabs, label)
 	}
 
-	// 当前状态放在标题右侧，不再同时重复显示在标签栏和输入框上方。
-	statusColor := lipgloss.Color("#929DAF")
-	if snapshot.Running {
-		statusColor = lipgloss.Color("#D9BC83")
-	} else if snapshot.Status == "已完成" {
-		statusColor = lipgloss.Color("#9BC5AE")
-	} else if snapshot.Status == "失败" {
-		statusColor = lipgloss.Color("#E3A0A0")
-	}
-	status := displayLine(snapshot.Status, width)
+	status, statusColor := sessionStatus(snapshot)
 	title := displayLine(fmt.Sprintf("◆ 会话 %d · %s", currentNumber, snapshot.Title), max(1, width-ansi.StringWidth(status)-2))
 	gap := max(1, width-ansi.StringWidth(title)-ansi.StringWidth(status))
 	header := workspaceTitle.Render(title) + strings.Repeat(" ", gap) + lipgloss.NewStyle().Foreground(statusColor).Render(status)
 	meta := m.session.config.Model + "  ·  " + m.session.config.ProjectDir
 	header += "\n" + workspaceMuted.Render(displayLine(meta, width))
-	if len(tabs) > 1 {
-		header += "\n" + workspaceMuted.Render(displayLine(strings.Join(tabs, "    "), width))
-	}
 
 	// 输入框的边框、左右内边距各占两列。textarea 的宽度在 WindowSizeMsg 中同步调整。
 	composer := composerPanel.Width(width - 2).Render(m.session.draft.View())
@@ -235,6 +216,12 @@ func (m terminalModel) View() tea.View {
 	beforeBody := header + "\n\n"
 	afterBody := "\n\n" + statusBlock + composer + "\n" + footer
 	bodyHeight := max(1, m.height-2-strings.Count(beforeBody, "\n")-strings.Count(afterBody, "\n"))
+	if len(m.app.opened) > 1 {
+		// 栅格最多占两排，优先给正文保留三行；输入变高时自动收起多余卡片。
+		grid := m.sessionGrid(width, bodyHeight-5, currentNumber)
+		beforeBody = header + "\n\n" + grid + "\n\n"
+		bodyHeight = max(1, bodyHeight-lipgloss.Height(grid)-2)
+	}
 	body := transcript(snapshot, width, bodyHeight, m.session.scrollOffset)
 	beforeComposer := beforeBody + body + "\n\n" + statusBlock
 	content := beforeComposer + composer + "\n" + footer

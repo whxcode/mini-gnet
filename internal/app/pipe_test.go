@@ -12,7 +12,7 @@ func TestPipeCommandsStayTextOnly(t *testing.T) {
 	a := terminalTestApp(t)
 	first := a.CurrentSession
 	var output bytes.Buffer
-	input := "/help\n/config\n/resume\n/new\n/sessions\n/sessions 1\n/stop\n/unknown\n/exit\n不应执行"
+	input := "/help\n/config\n/resume\n/new\n/ps\n/ps 1\n/stop\n/unknown\n/exit\n不应执行"
 	if err := a.RunPipe(context.Background(), strings.NewReader(input), &output); err != nil {
 		t.Fatal(err)
 	}

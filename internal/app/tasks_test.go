@@ -65,7 +65,7 @@ func TestBackgroundCompletesWithoutSwitchBack(t *testing.T) {
 	}
 	m = updateTerminal(m, refreshMsg{})
 	view := ansi.Strip(m.View().Content)
-	if !strings.Contains(view, "会话 1 已完成") || !strings.Contains(view, "/sessions 1 查看") {
+	if !strings.Contains(view, "会话 1 已完成") || !strings.Contains(view, "/ps 1 查看") {
 		t.Fatalf("前台未显示后台完成提示：%s", view)
 	}
 	if strings.Contains(view, "background-output") {

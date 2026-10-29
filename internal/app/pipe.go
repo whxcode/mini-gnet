@@ -46,7 +46,7 @@ func (a *App) RunPipe(ctx context.Context, input io.Reader, output io.Writer) er
 				err = fmt.Errorf("请在交互终端中使用 /config 编辑配置")
 			case command.Name == commandResumeName && len(args) == 0:
 				err = fmt.Errorf("管道中请使用 /resume <会话ID>")
-			case command.Name == commandSessionsName && len(args) == 0:
+			case (command.Name == commandSessionsName || command.Name == commandPSName) && len(args) == 0:
 				for i, session := range a.opened {
 					state := session.snapshot()
 					fmt.Fprintf(output, "%d  %s · %s  %s\n", i+1, state.Status, state.Title, state.ID)

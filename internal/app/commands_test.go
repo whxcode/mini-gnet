@@ -37,6 +37,9 @@ func TestLookupCommand(t *testing.T) {
 		{"/new", commandNewName, "", false},
 		{"/exit", commandExitName, "", false},
 		{"/resume", commandResumeName, "", false},
+		{"/ps", commandPSName, "", false},
+		{"/ps 2", commandPSName, "2", false},
+		{"/ps 1 2", "", "", true},
 		{"  /resume\told-id  ", commandResumeName, "old-id", false},
 		{"/unknown", "", "", true},
 		{"/help unexpected", "", "", true},
@@ -62,6 +65,32 @@ func TestLookupCommand(t *testing.T) {
 		if cmd == nil || cmd.Name != tc.name || cmd.Handler == nil || strings.Join(args, " ") != tc.args {
 			t.Errorf("%q: cmd=%+v, args=%v", tc.text, cmd, args)
 		}
+	}
+}
+
+// TestPSKeepsSessionState 验证快捷编号切换复用原会话，保留草稿与历史，错误编号不改变当前会话。
+func TestPSKeepsSessionState(t *testing.T) {
+	a := terminalTestApp(t)
+	first := a.CurrentSession
+	first.draft.SetValue("未发送的草稿")
+	first.history.AppendUserMessage("已有提问")
+	if err := executeCommandForTest(t, a, "/new"); err != nil {
+		t.Fatal(err)
+	}
+	second := a.CurrentSession
+	if err := executeCommandForTest(t, a, "/ps 1"); err != nil {
+		t.Fatal(err)
+	}
+	if a.CurrentSession != first || first.draft.Value() != "未发送的草稿" || len(first.history.ToChatCompletionMessage()) != 2 {
+		t.Fatal("切换应复用原会话及其草稿、历史")
+	}
+	for _, invalid := range []string{"/ps 0", "/ps 3", "/ps unknown"} {
+		if err := executeCommandForTest(t, a, invalid); err == nil || a.CurrentSession != first {
+			t.Fatalf("错误编号不应改变当前会话：%s", invalid)
+		}
+	}
+	if err := executeCommandForTest(t, a, "/ps 2"); err != nil || a.CurrentSession != second || len(a.opened) != 2 {
+		t.Fatal("快捷切换不应新建会话", err)
 	}
 }
 
