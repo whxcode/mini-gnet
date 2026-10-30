@@ -38,7 +38,7 @@ func builtinCommands() []command {
 		{Name: commandNewName, Description: "创建并切换新会话，旧任务继续执行", Handler: handleNew},
 		{Name: commandSessionsName, Description: "切换已打开的会话（可带编号或 ID）", MaxArgs: 1, Handler: handleSessions},
 		{Name: commandPSName, Description: "快速切换会话，例如 /ps 2；不带参数打开列表", MaxArgs: 1, Handler: handleSessions},
-		{Name: commandStopName, Description: "只停止当前会话的任务", Handler: handleStop},
+		{Name: commandStopName, Description: "停止当前会话的任务并清空等待队列", Handler: handleStop},
 		{Name: commandExitName, Description: "退出程序", Handler: handleExit},
 	}
 }

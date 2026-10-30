@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 
@@ -147,6 +148,9 @@ func handleSessions(a *App, args []string) error {
 			currentID = id
 		}
 		title := snapshot.Status + " · " + snapshot.Title
+		if len(snapshot.Pending) > 0 {
+			title += fmt.Sprintf(" [等待 %d 项]", len(snapshot.Pending))
+		}
 		if snapshot.HasUnreadResult && s != current {
 			title += " [有新结果]"
 		}
@@ -164,11 +168,12 @@ func handleSessions(a *App, args []string) error {
 	return nil
 }
 
-// handleStop 只取消当前会话的任务；其他会话继续执行。
+// handleStop 取消当前会话正在执行和等待执行的任务；其他会话继续执行。
 func handleStop(a *App, _ []string) error {
 	s := a.CurrentSession
-	if !s.snapshot().Running {
-		a.notify("当前会话没有正在执行的任务。")
+	state := s.snapshot()
+	if !state.Running && len(state.Pending) == 0 {
+		a.notify("当前会话没有正在执行的任务，也没有等待任务。")
 		return nil
 	}
 	s.stop()

@@ -53,8 +53,8 @@ func TestRunPipeToolRoundTrip(t *testing.T) {
 	if requests.Load() != 2 || len(history) != 5 || history[4].Content != "已获取目录" {
 		t.Fatalf("unexpected history: %+v", history)
 	}
-	if err := a.CurrentSession.currentTask().err; err != nil {
-		t.Fatal(err)
+	if a.CurrentSession.snapshot().Status != "已完成" {
+		t.Fatal("任务没有成功完成")
 	}
 }
 

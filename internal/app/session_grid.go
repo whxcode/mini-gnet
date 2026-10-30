@@ -16,6 +16,9 @@ func sessionStatus(state sessionSnapshot) (string, color.Color) {
 	if state.Running || state.Status == "执行中" {
 		return "◌ 执行中", lipgloss.Color("#D9BC83")
 	}
+	if len(state.Pending) > 0 {
+		return "◷ 等待中", lipgloss.Color("#D9BC83")
+	}
 	switch state.Status {
 	case "已完成":
 		return "✓ 已完成", lipgloss.Color("#9BC5AE")
@@ -57,6 +60,9 @@ func (m terminalModel) sessionGrid(width, maxHeight, currentNumber int) string {
 				borderColor = lipgloss.Color("#A7C7F5")
 			}
 			title := state.Title
+			if len(state.Pending) > 0 {
+				title = fmt.Sprintf("等待 %d 项 · %s", len(state.Pending), title)
+			}
 			if state.HasUnreadResult && session != m.session {
 				title = "● 新结果 · " + title
 			}

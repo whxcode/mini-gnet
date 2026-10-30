@@ -11,7 +11,7 @@ import (
 	"github.com/whxcode/mini-gnet/views/conversation"
 )
 
-// RunPipe 专用于管道：按行读取、顺序执行、打印结果；不启动菜单或后台任务。
+// RunPipe 专用于管道：按行读取、入队并等待本项完成、打印结果；不启动交互菜单。
 // 管道的特殊处理集中在本文件，读交互主流程时可以完全跳过这里。
 func (a *App) RunPipe(ctx context.Context, input io.Reader, output io.Writer) error {
 	reader := bufio.NewReader(input)
@@ -68,13 +68,13 @@ func (a *App) RunPipe(ctx context.Context, input io.Reader, output io.Writer) er
 
 		session := a.CurrentSession
 		firstMessage := len(session.snapshot().Messages)
-		job, err := a.prepareTask(ctx, query)
+		job, err := a.enqueueTask(ctx, query)
 		if err != nil {
 			fmt.Fprintln(output, conversation.Format(conversation.Event{Role: conversation.Error, Text: err.Error()}, 0))
 			continue
 		}
 		// 等本行任务完成，再读取下一行；EOF 不会提前取消正在执行的请求。
-		session.RunTask(job)
+		<-job.done
 		for _, event := range session.snapshot().Messages[firstMessage:] {
 			fmt.Fprintln(output, conversation.Format(event, 0))
 		}

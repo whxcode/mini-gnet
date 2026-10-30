@@ -98,7 +98,8 @@ func (m terminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "alt+n":
 			return m.submit("/new")
 		case "ctrl+c":
-			if m.session.snapshot().Running {
+			state := m.session.snapshot()
+			if state.Running || len(state.Pending) > 0 {
 				return m.submit("/stop")
 			}
 			return m.submit("/exit")
@@ -203,6 +204,10 @@ func (m terminalModel) View() tea.View {
 	var statusLines []string
 	if snapshot.Running && snapshot.ProgressText != "" {
 		statusLines = append(statusLines, workspaceMuted.Render(displayLine("◌ "+snapshot.ProgressText, width)))
+	}
+	if len(snapshot.Pending) > 0 {
+		text := fmt.Sprintf("◷ 等待 %d 项 · 下一项：%s", len(snapshot.Pending), snapshot.Pending[0])
+		statusLines = append(statusLines, workspaceNotice.Render(displayLine(text, width)))
 	}
 	for _, notice := range m.backgroundNotices(width, 2) {
 		statusLines = append(statusLines, workspaceNotice.Render(notice))

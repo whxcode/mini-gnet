@@ -4,7 +4,6 @@ package app
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -12,7 +11,6 @@ import (
 	"github.com/sashabaranov/go-openai"
 	"github.com/whxcode/mini-gnet/config"
 	toolsList "github.com/whxcode/mini-gnet/tools/list"
-	"github.com/whxcode/mini-gnet/views/conversation"
 )
 
 // App 持有应用唯一的运行配置，并管理会话列表和输入循环。
@@ -45,13 +43,12 @@ func New() (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	current := newSession(session)
-	return &App{
-		config:         cfg,
-		CurrentSession: current,
-		opened:         []*Session{current},
-		tools:          tools,
-	}, nil
+	a := &App{
+		config: cfg,
+		tools:  tools,
+	}
+	a.attachSession(session)
+	return a, nil
 }
 
 // Close 先取消并等待所有任务，再关闭每个会话的记录文件；切换时不会关闭旧会话。
@@ -61,19 +58,21 @@ func (a *App) Close() error {
 	}
 	a.closed = true
 	for _, s := range a.opened {
+		s.mu.Lock()
+		s.closed = true
+		close(s.taskQueue) // 关闭后不能再入队，Run 也不会启动尚未执行的任务。
+		s.mu.Unlock()
 		s.stop()
 	}
 	var err error
 	for _, s := range a.opened {
-		if task := s.currentTask(); task != nil {
-			<-task.done
-		}
+		<-s.workerDone
 		err = errors.Join(err, s.history.Close())
 	}
 	return err
 }
 
-// Run 专用于交互终端：读输入、执行命令、启动后台任务；管道入口独立放在 pipe.go。
+// Run 专用于交互终端：读输入、执行命令或提交队列；管道入口独立放在 pipe.go。
 func (a *App) Run(ctx context.Context) error {
 	for !a.quit {
 		if err := ctx.Err(); err != nil {
@@ -109,23 +108,16 @@ func (a *App) Run(ctx context.Context) error {
 			}
 			continue
 		}
-		// 3. 在启动 goroutine 前占用本会话、保存提问、捕获配置。
-		// 如果放到 goroutine 里才标记忙碌，快速连续发送可能启动两个任务。
+		// 3. 只提交到当前会话的队列；任务由该会话自己的 Run 循环顺序执行。
 		session := a.CurrentSession
-		job, err := a.prepareTask(ctx, query)
+		_, err = a.enqueueTask(ctx, query)
 		if err != nil {
-			fmt.Println("加入任务队列:", query)
-			session.updateDisplay(conversation.Event{
-				Kind: conversation.Status, Role: conversation.Assistant, Text: "加入任务队列失败" + query,
-			}) // 保留输入草稿，方便修改或切换会话。
 			a.reportError(err)
 			continue // 保留输入草稿，方便修改或切换会话。
 		}
 
 		session.draft.Reset()
 
-		// 4. 后台执行任务，主循环随即继续接收输入。
-		go session.RunTask(job)
 	}
 	return nil
 }

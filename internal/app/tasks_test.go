@@ -18,21 +18,27 @@ import (
 	"github.com/whxcode/mini-gnet/config"
 )
 
-// TestPrepareTaskStopsOnHistoryError 验证提问保存失败就直接返回，不创建任务或标记执行中。
-func TestPrepareTaskStopsOnHistoryError(t *testing.T) {
+// TestQueuedTaskStopsOnHistoryError 验证入队后保存提问失败会结束本任务，不请求模型或显示提交成功。
+func TestQueuedTaskStopsOnHistoryError(t *testing.T) {
 	a := terminalTestApp(t)
 	s := a.CurrentSession
 	before := s.snapshot()
 	if err := s.history.Close(); err != nil {
 		t.Fatal(err)
 	}
-	job, err := a.prepareTask(context.Background(), "不能保存的提问")
-	if !errors.Is(err, os.ErrClosed) || job != nil {
-		t.Fatalf("保存失败应直接终止准备任务：job=%v, err=%v", job, err)
+	job, err := a.enqueueTask(context.Background(), "不能保存的提问")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := waitTask(t, job); !errors.Is(err, os.ErrClosed) {
+		t.Fatalf("应返回保存错误：%v", err)
 	}
 	after := s.snapshot()
-	if after.Running || s.currentTask() != nil || len(after.Messages) != len(before.Messages) {
-		t.Fatal("保存失败后不应启动任务或显示提问已提交")
+	if after.Running || len(s.history.ToChatCompletionMessage()) != 1 || after.Status != "失败" {
+		t.Fatal("保存失败后不应启动模型或写入提问")
+	}
+	if len(after.Messages) != len(before.Messages)+1 {
+		t.Fatal("应只显示一条失败信息")
 	}
 }
 
@@ -99,15 +105,9 @@ func TestBackgroundCompletesWithoutSwitchBack(t *testing.T) {
 	}
 }
 
-// startTaskForTest 在测试中重复主循环的准备和启动两步，便于控制模拟模型的执行时机。
+// startTaskForTest 通过与主循环相同的入口提交任务，由会话自己的消费循环执行。
 func startTaskForTest(a *App, ctx context.Context, query string) (*task, error) {
-	session := a.CurrentSession
-	job, err := a.prepareTask(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	go session.RunTask(job)
-	return job, nil
+	return a.enqueueTask(ctx, query)
 }
 
 // taskTestApp 创建使用临时记录和本地模拟模型的应用，不读取或保存用户配置。
@@ -153,7 +153,7 @@ func awaitRequest(t *testing.T, started <-chan string, want string) {
 	}
 }
 
-// TestConcurrentSessionsAndStop 验证两轮任务同时执行、输出隔离、重复提交被拒绝、停止只影响当前会话。
+// TestConcurrentSessionsAndStop 验证两轮任务同时执行、输出隔离、同会话新提问排队、停止只影响当前会话。
 func TestConcurrentSessionsAndStop(t *testing.T) {
 	started := make(chan string, 2)
 	releaseSecond := make(chan struct{})
@@ -186,8 +186,12 @@ func TestConcurrentSessionsAndStop(t *testing.T) {
 		t.Fatal(err)
 	}
 	awaitRequest(t, started, "first")
-	if _, err := startTaskForTest(a, context.Background(), "duplicate"); err == nil {
-		t.Fatal("一个会话同时启动了两个任务")
+	queued, err := startTaskForTest(a, context.Background(), "duplicate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.snapshot().Pending) != 1 {
+		t.Fatal("新提问未进入等待队列")
 	}
 	if err := handleNew(a, nil); err != nil {
 		t.Fatal(err)
@@ -222,6 +226,9 @@ func TestConcurrentSessionsAndStop(t *testing.T) {
 	if err := waitTask(t, firstTask); !errors.Is(err, context.Canceled) {
 		t.Fatalf("first task: %v", err)
 	}
+	if err := waitTask(t, queued); !errors.Is(err, context.Canceled) {
+		t.Fatalf("排队任务未取消：%v", err)
+	}
 	if !second.snapshot().Running {
 		t.Fatal("停止会话 1 影响了会话 2")
 	}
@@ -238,7 +245,7 @@ func TestConcurrentSessionsAndStop(t *testing.T) {
 		t.Fatal("会话上下文交叉")
 	}
 	if strings.Contains(string(firstJSON), "duplicate") {
-		t.Fatal("被拒绝的提交写入了历史")
+		t.Fatal("未执行的排队任务写入了历史")
 	}
 	if !strings.Contains(string(secondJSON), "reply-second") {
 		t.Fatal("会话 2 结果未保存")
@@ -345,11 +352,11 @@ func TestAllSessionsUseAppConfig(t *testing.T) {
 	a.config.ChatsDir = t.TempDir()
 	for _, session := range []*Session{first, second} {
 		a.activateSession(session)
-		job, err := a.prepareTask(context.Background(), "使用新配置")
+		job, err := a.enqueueTask(context.Background(), "使用新配置")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := session.RunTask(job); err != nil {
+		if err := waitTask(t, job); err != nil {
 			t.Fatal(err)
 		}
 	}

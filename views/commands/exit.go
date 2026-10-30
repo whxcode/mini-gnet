@@ -33,5 +33,5 @@ func (m exitModel) View() tea.View {
 	if m.done {
 		return tea.NewView("")
 	}
-	return tea.NewView(panel.Render(fmt.Sprintf("还有 %d 个任务正在执行。\nEnter 停止所有任务并退出 · Esc 返回", m.running)))
+	return tea.NewView(panel.Render(fmt.Sprintf("还有 %d 个会话存在执行或等待任务。\nEnter 取消所有任务并退出 · Esc 返回", m.running)))
 }

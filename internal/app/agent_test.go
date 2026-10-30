@@ -73,7 +73,7 @@ func agentTaskForTest(t *testing.T, c *scriptedModel) (*App, *Session, *task) {
 	t.Cleanup(server.Close)
 	a.config.BaseURL = server.URL
 	a.config.Model = "test"
-	job, err := a.prepareTask(context.Background(), "测试提问")
+	job, err := a.enqueueTask(context.Background(), "测试提问")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func (c *scriptedModel) requestHistory() [][]openai.ChatCompletionMessage {
 func TestAgentStreamsBeforeFinalMessage(t *testing.T) {
 	c := &scriptedModel{t: t, answers: []net.StreamResult{{Text: "你好，世界"}}}
 	_, session, job := agentTaskForTest(t, c)
-	if err := session.RunTask(job); err != nil {
+	if err := waitTask(t, job); err != nil {
 		t.Fatal(err)
 	}
 	finalCount := 0
@@ -194,8 +194,8 @@ func TestAgentRepairsPythonAfterTextOnlyReply(t *testing.T) {
 		pythonCall("import os\nprint(os.cpu_count())"),
 		{Text: "已获取 CPU 数量。"},
 	}}
-	_, session, job := agentTaskForTest(t, c)
-	if err := session.RunTask(job); err != nil {
+	_, _, job := agentTaskForTest(t, c)
+	if err := waitTask(t, job); err != nil {
 		t.Fatal(err)
 	}
 	if len(c.requestHistory()) != 4 {
@@ -225,8 +225,8 @@ func TestAgentRetryLimits(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := &scriptedModel{t: t, answers: tc.answers}
-			_, session, job := agentTaskForTest(t, c)
-			err := session.RunTask(job)
+			_, _, job := agentTaskForTest(t, c)
+			err := waitTask(t, job)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -237,8 +237,8 @@ func TestAgentRetryLimits(t *testing.T) {
 // TestAgentOrdinaryAnswerDoesNotRetry 验证普通回答结束后不会无故继续请求模型。
 func TestAgentOrdinaryAnswerDoesNotRetry(t *testing.T) {
 	c := &scriptedModel{t: t, answers: []net.StreamResult{{Text: "Python 是一种编程语言。"}}}
-	_, session, job := agentTaskForTest(t, c)
-	if err := session.RunTask(job); err != nil {
+	_, _, job := agentTaskForTest(t, c)
+	if err := waitTask(t, job); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -247,7 +247,7 @@ func TestAgentOrdinaryAnswerDoesNotRetry(t *testing.T) {
 func TestSessionCanContinueAfterStreamFailure(t *testing.T) {
 	c := &scriptedModel{t: t, failResponse: true, answers: []net.StreamResult{{Text: "部分回答"}, {Text: "第二次完成"}}}
 	a, session, first := agentTaskForTest(t, c)
-	if err := session.RunTask(first); err == nil || !strings.Contains(err.Error(), "invalid character") {
+	if err := waitTask(t, first); err == nil || !strings.Contains(err.Error(), "invalid character") {
 		t.Fatalf("未返回流错误：%v", err)
 	}
 	if err := waitTask(t, first); err == nil || !strings.Contains(err.Error(), "invalid character") {
@@ -274,11 +274,11 @@ func TestSessionCanContinueAfterStreamFailure(t *testing.T) {
 	c.mu.Lock()
 	c.failResponse = false
 	c.mu.Unlock()
-	second, err := a.prepareTask(context.Background(), "继续")
+	second, err := a.enqueueTask(context.Background(), "继续")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := session.RunTask(second); err != nil {
+	if err := waitTask(t, second); err != nil {
 		t.Fatal(err)
 	}
 	if first == second || session.snapshot().Status != "已完成" {

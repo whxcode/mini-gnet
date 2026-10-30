@@ -156,13 +156,15 @@ func TestSessionDraftAndDisplayIsolation(t *testing.T) {
 	}
 }
 
-// TestBusyInputRemainsEditable 验证执行期间可编辑、换行和调用命令，普通重复提交不会丢失草稿。
+// TestBusyInputRemainsEditable 验证执行期间可编辑、换行和调用命令，提交前不会丢失草稿。
 func TestBusyInputRemainsEditable(t *testing.T) {
 	a := terminalTestApp(t)
 	s := a.CurrentSession
 	// 本测试不创建后台任务，仅设置显示状态；结束前恢复，避免清理时发起取消。
-	s.running = true
-	defer func() { s.running = false }()
+	s.mu.Lock()
+	s.active = &task{cancel: func() {}}
+	s.mu.Unlock()
+	defer func() { s.mu.Lock(); s.active = nil; s.mu.Unlock() }()
 	m := newTerminal(a, context.Background())
 	m = updateTerminal(m, tea.PasteMsg{Content: "等待中的问题"})
 	m = updateTerminal(m, tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl})
@@ -170,9 +172,6 @@ func TestBusyInputRemainsEditable(t *testing.T) {
 	m = updateTerminal(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if !m.done || !m.fromEditor || s.draft.Value() != "等待中的问题\n第二行" {
 		t.Fatal("界面应交出原始文本并保留草稿")
-	}
-	if _, err := a.prepareTask(context.Background(), m.query); err == nil {
-		t.Fatal("主流程允许忙碌会话重复提交")
 	}
 	m = newTerminal(a, context.Background())
 	m = updateTerminal(m, tea.KeyPressMsg{Code: tea.KeyF2})

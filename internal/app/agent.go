@@ -13,13 +13,20 @@ import (
 	"github.com/whxcode/mini-gnet/views/conversation"
 )
 
-// RunTask 由主循环启动：按顺序请求模型、读取流、保存回答、执行工具，再决定是否继续。
-// 这个函数会阻塞到任务结束；交互模式用 go 调用，管道模式直接调用。
-// job 已由 prepareTask 占用会话并捕获配置，这里不读取 App，也不再启动协程或转发 channel。
+// RunTask 由 Session.Run 顺序调用：保存提问、请求模型、读取流、执行工具，直到本项结束。
+// 这里只使用入队时固定的参数，不读取 App，不启动协程。
 func (s *Session) RunTask(job *task) (err error) {
 	// 无论下面在哪一步 return，都用返回的 err 更新状态并关闭 done，避免退出时一直等待。
 	defer func() { err = s.finishTask(job, err) }()
 	ctx := job.ctx
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// 轮到本任务才写入提问，当前任务不会提前读到后面排队的问题。
+	if err := s.history.AppendUserMessage(job.query); err != nil {
+		return err
+	}
+	s.updateDisplay(conversation.Event{Role: conversation.User, Name: conversation.Username(), Text: job.query})
 	tools := job.tools
 	projectDir := job.config.ProjectDir
 	history := s.history
@@ -60,7 +67,7 @@ func (s *Session) RunTask(job *task) (err error) {
 		}
 
 		// 2. 顺序读取片段，直接更新本会话；不经过界面回调或消息中转协程。
-		// 一直读取 delta 直到 os.EOF 表示读取完毕
+		// 一直读取 delta，直到 io.EOF 表示读取完毕。
 		for {
 			if err = ctx.Err(); err != nil {
 				break

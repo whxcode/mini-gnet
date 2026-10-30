@@ -14,6 +14,7 @@ func (a *App) attachSession(record *message.TempMessage) {
 	s := newSession(record)
 	a.opened = append(a.opened, s)
 	a.activateSession(s)
+	go s.Run() // 每个会话只启动一个消费循环；/ps 切换不会走到这里。
 }
 
 // activateSession 只改变当前查看对象；后台任务继续使用所属会话的记录和启动时的配置。
@@ -54,11 +55,12 @@ func (a *App) openedHistory(dir, id string) *Session {
 	return nil
 }
 
-// runningCount 统计所有打开会话中的任务，用于退出确认和界面提示。
+// runningCount 统计有执行或等待任务的会话数，用于退出确认。
 func (a *App) runningCount() int {
 	count := 0
 	for _, s := range a.opened {
-		if s.snapshot().Running {
+		state := s.snapshot()
+		if state.Running || len(state.Pending) > 0 {
 			count++
 		}
 	}
