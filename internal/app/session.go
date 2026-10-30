@@ -7,7 +7,6 @@ import (
 
 	"charm.land/bubbles/v2/textarea"
 	"github.com/whxcode/mini-gnet/config"
-	"github.com/whxcode/mini-gnet/net"
 	prompt "github.com/whxcode/mini-gnet/system_propmt"
 	"github.com/whxcode/mini-gnet/views/conversation"
 	"github.com/whxcode/mini-gnet/views/input"
@@ -17,10 +16,7 @@ import (
 // Session 是一个打开的聊天窗口：保存聊天记录、输入草稿和这个窗口的任务状态。
 // App.CurrentSession 决定看哪个窗口；切换窗口不会移动或重启任务。
 type Session struct {
-	// 会话配置只由主循环修改。任务启动前会复制客户端和工作目录。
 	history *message.TempMessage // 模型上下文及其 JSONL 文件句柄，负责聊天记录的持久化。
-	config  config.Config        // 此会话后续请求使用的配置。
-	client  net.Client           // 按此会话配置创建的模型客户端。
 
 	// 输入框只由界面操作，后台任务不修改用户正在编辑的文字。
 	draft        textarea.Model // 未发送的输入，切换会话时保留文字和光标。
@@ -54,11 +50,9 @@ type sessionSnapshot struct {
 }
 
 // newSession 根据聊天记录创建一个窗口；加载历史只恢复显示，不执行历史任务。
-func newSession(history *message.TempMessage, cfg config.Config, client net.Client) *Session {
+func newSession(history *message.TempMessage) *Session {
 	session := &Session{
 		history:   history,
-		config:    cfg,
-		client:    client,
 		draft:     input.NewTextArea(),
 		status:    "空闲",
 		title:     "新会话",

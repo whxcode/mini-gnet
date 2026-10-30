@@ -5,20 +5,18 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/whxcode/mini-gnet/config"
-	"github.com/whxcode/mini-gnet/net"
 	"github.com/whxcode/mini-gnet/views/conversation"
 	"github.com/whxcode/mini-gnet/views/message"
 )
 
 // attachSession 将新建或恢复的记录加入列表，不关闭其他会话，也不停止它们的任务。
-func (a *App) attachSession(record *message.TempMessage, cfg config.Config, client net.Client) {
-	s := newSession(record, cfg, client)
+func (a *App) attachSession(record *message.TempMessage) {
+	s := newSession(record)
 	a.opened = append(a.opened, s)
 	a.activateSession(s)
 }
 
-// activateSession 只改变当前查看对象；后台任务已经捕获自己的记录和客户端副本。
+// activateSession 只改变当前查看对象；后台任务继续使用所属会话的记录和启动时的配置。
 func (a *App) activateSession(s *Session) {
 	a.CurrentSession = s
 	s.markRead()
@@ -48,7 +46,7 @@ func (a *App) findSession(value string) (*Session, error) {
 func (a *App) openedHistory(dir, id string) *Session {
 	want, _ := filepath.Abs(filepath.Join(dir, id+".jsonl"))
 	for _, s := range a.opened {
-		path, _ := filepath.Abs(filepath.Join(s.config.ChatsDir, s.history.SessionID+".jsonl"))
+		path, _ := filepath.Abs(s.history.Path())
 		if path == want {
 			return s
 		}

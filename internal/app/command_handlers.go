@@ -14,10 +14,9 @@ func handleHelp(_ *App, _ []string) error {
 	return commands.ShowHelp(commandHelp())
 }
 
-// handleConfig 完成配置编辑、保存和应用；Esc 不修改状态，保存失败保留原客户端和会话。
+// handleConfig 完成配置编辑、保存和应用；Esc 不修改状态，保存失败保留原配置和会话。
 func handleConfig(a *App, _ []string) error {
-	current := a.CurrentSession
-	edited, err := commands.EditConfig(a.CurrentSession.config)
+	edited, err := commands.EditConfig(a.config)
 	if err != nil {
 		return err
 	}
@@ -35,7 +34,7 @@ func handleConfig(a *App, _ []string) error {
 	}
 	var replacement *message.TempMessage
 	// 改变目录时开启新会话，避免把新项目的问题混进旧项目的记录。
-	if next.ChatsDir != a.CurrentSession.config.ChatsDir || next.ProjectDir != a.CurrentSession.config.ProjectDir {
+	if next.ChatsDir != a.config.ChatsDir || next.ProjectDir != a.config.ProjectDir {
 		var err error
 		replacement, err = startSession(next)
 		if err != nil {
@@ -48,20 +47,13 @@ func handleConfig(a *App, _ []string) error {
 		}
 		return err
 	}
-	client := a.CurrentSession.client
-	client.BaseURL = next.BaseURL
-	client.ApiKey = next.APIKey
-	client.Model = next.Model
+	// 所有会话的后续任务都读取这份配置，已启动任务继续使用启动时的参数。
+	a.config = next
 	if replacement != nil {
-		a.attachSession(replacement, next, client)
-	} else {
-		// 只更新当前会话的后续任务；已启动任务持有自己的客户端和目录快照。
-		current.config = next
-		current.client = client
-		a.activateSession(current)
+		a.attachSession(replacement)
 	}
 	path, _ := config.Path()
-	text := "配置已保存并应用：" + path + "\n模型：" + a.CurrentSession.config.Model
+	text := "配置已保存并应用：" + path + "\n模型：" + a.config.Model
 	if replacement != nil {
 		text += "\n目录已改变，已开启新会话：" + replacement.SessionID
 	}
@@ -76,7 +68,7 @@ func handleResume(a *App, args []string) error {
 		id = args[0]
 	} else {
 		var err error
-		id, err = commands.SelectSession(a.CurrentSession.config.ChatsDir, a.CurrentSession.history.SessionID)
+		id, err = commands.SelectSession(a.config.ChatsDir, a.CurrentSession.history.SessionID)
 		if err != nil {
 			return err
 		}
@@ -85,25 +77,25 @@ func handleResume(a *App, args []string) error {
 			return nil
 		}
 	}
-	if opened := a.openedHistory(a.CurrentSession.config.ChatsDir, id); opened != nil {
+	if opened := a.openedHistory(a.config.ChatsDir, id); opened != nil {
 		a.activateSession(opened)
 		return nil
 	}
-	next, err := message.Resume(a.CurrentSession.config.ChatsDir, id)
+	next, err := message.Resume(a.config.ChatsDir, id)
 	if err != nil {
 		return err
 	}
-	a.attachSession(next, a.CurrentSession.config, a.CurrentSession.client)
+	a.attachSession(next)
 	return nil
 }
 
 // handleNew 创建并切换新会话；创建失败时继续使用原会话。
 func handleNew(a *App, _ []string) error {
-	next, err := startSession(a.CurrentSession.config)
+	next, err := startSession(a.config)
 	if err != nil {
 		return err
 	}
-	a.attachSession(next, a.CurrentSession.config, a.CurrentSession.client)
+	a.attachSession(next)
 	return nil
 }
 

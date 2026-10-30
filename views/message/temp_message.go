@@ -22,6 +22,11 @@ type TempMessage struct {
 
 var _ imp.Message = (*TempMessage)(nil)
 
+// Path 返回已经打开的记录路径；修改应用配置不会把旧会话迁移到另一个文件。
+func (t *TempMessage) Path() string {
+	return t.fd.Name()
+}
+
 // ToChatCompletionMessage 返回消息列表的副本，供模型请求使用。
 func (t *TempMessage) ToChatCompletionMessage() (result []openai.ChatCompletionMessage) {
 	t.mtx.Lock()

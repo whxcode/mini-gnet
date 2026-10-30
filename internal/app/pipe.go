@@ -68,7 +68,7 @@ func (a *App) RunPipe(ctx context.Context, input io.Reader, output io.Writer) er
 
 		session := a.CurrentSession
 		firstMessage := len(session.snapshot().Messages)
-		job, err := session.prepareTask(ctx, query, a.tools)
+		job, err := a.prepareTask(ctx, query)
 		if err != nil {
 			fmt.Fprintln(output, conversation.Format(conversation.Event{Role: conversation.Error, Text: err.Error()}, 0))
 			continue

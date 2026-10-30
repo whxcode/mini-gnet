@@ -190,7 +190,7 @@ func (m terminalModel) View() tea.View {
 	title := displayLine(fmt.Sprintf("◆ 会话 %d · %s", currentNumber, snapshot.Title), max(1, width-ansi.StringWidth(status)-2))
 	gap := max(1, width-ansi.StringWidth(title)-ansi.StringWidth(status))
 	header := workspaceTitle.Render(title) + strings.Repeat(" ", gap) + lipgloss.NewStyle().Foreground(statusColor).Render(status)
-	meta := m.session.config.Model + "  ·  " + m.session.config.ProjectDir
+	meta := m.app.config.Model + "  ·  " + m.app.config.ProjectDir
 	header += "\n" + workspaceMuted.Render(displayLine(meta, width))
 
 	// 输入框的边框、左右内边距各占两列。textarea 的宽度在 WindowSizeMsg 中同步调整。

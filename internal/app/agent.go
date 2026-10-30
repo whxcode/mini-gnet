@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,14 +9,9 @@ import (
 
 	"github.com/sashabaranov/go-openai"
 	"github.com/whxcode/mini-gnet/net"
+	prompt "github.com/whxcode/mini-gnet/system_propmt"
 	"github.com/whxcode/mini-gnet/views/conversation"
 )
-
-// chatClient 只要求模型能打开一个可主动读取的流，测试可以提供假客户端。
-type chatClient interface {
-	// OpenStream 返回可由 Agent 顺序读取的响应流。
-	OpenStream(context.Context, []openai.ChatCompletionMessage, []openai.Tool) (net.ResponseStream, error)
-}
 
 // RunTask 由主循环启动：按顺序请求模型、读取流、保存回答、执行工具，再决定是否继续。
 // 这个函数会阻塞到任务结束；交互模式用 go 调用，管道模式直接调用。
@@ -26,9 +20,8 @@ func (s *Session) RunTask(job *task) (err error) {
 	// 无论下面在哪一步 return，都用返回的 err 更新状态并关闭 done，避免退出时一直等待。
 	defer func() { err = s.finishTask(job, err) }()
 	ctx := job.ctx
-	client := job.client
 	tools := job.tools
-	projectDir := job.projectDir
+	projectDir := job.config.ProjectDir
 	history := s.history
 	pythonPending := false
 	failures := 0
@@ -40,6 +33,13 @@ func (s *Session) RunTask(job *task) (err error) {
 			return err
 		}
 		messages := history.ToChatCompletionMessage()
+		// 恢复旧会话也使用本次任务的工作目录，避免历史提示词继续指向旧目录。
+		system := openai.ChatCompletionMessage{Role: openai.ChatMessageRoleSystem, Content: prompt.CheckAgentPrompt(projectDir)}
+		if len(messages) > 0 && messages[0].Role == openai.ChatMessageRoleSystem {
+			messages[0] = system
+		} else {
+			messages = append([]openai.ChatCompletionMessage{system}, messages...)
+		}
 		if pythonPending {
 			messages = append(messages, openai.ChatCompletionMessage{
 				Role:    openai.ChatMessageRoleSystem,
@@ -48,6 +48,12 @@ func (s *Session) RunTask(job *task) (err error) {
 		}
 		s.updateDisplay(conversation.Event{Kind: conversation.Status, Role: conversation.Assistant, Text: "正在生成 · Ctrl+C 停止"})
 		// 1. 发起本轮模型请求，直接拿到可读取的响应流。
+		// 客户端只在请求处临时创建；Session 和 task 不保存、不传递它。
+		client := net.Client{
+			BaseURL: job.config.BaseURL,
+			ApiKey:  job.config.APIKey,
+			Model:   job.config.Model,
+		}
 		stream, err := client.OpenStream(ctx, messages, tools)
 		if err != nil {
 			return err

@@ -8,24 +8,25 @@ import (
 	"time"
 
 	"github.com/sashabaranov/go-openai"
+	"github.com/whxcode/mini-gnet/config"
 	"github.com/whxcode/mini-gnet/views/conversation"
 )
 
 // task 表示一次提问的执行，而 Session 是可反复提问的整个聊天会话。
 // 主循环先创建 task，再用 go session.RunTask(job) 执行；这些配置在执行期间不再修改。
 type task struct {
-	ctx        context.Context    // 本次执行的取消信号，模型请求和工具调用都使用它。
-	cancel     context.CancelFunc // /stop 调用它，请求本次执行停止，不影响其他会话。
-	client     chatClient         // 启动时复制的模型客户端，避免执行中修改配置影响本任务。
-	tools      []openai.Tool      // 本次请求允许模型调用的工具声明。
-	projectDir string             // 本次工具操作使用的工作目录。
-	done       chan struct{}      // 任务结束后关闭；退出程序时等待它，再关闭历史文件。
-	err        error              // 最终执行错误；其他协程必须等 done 关闭后才能读取。
+	ctx    context.Context    // 本次执行的取消信号，模型请求和工具调用都使用它。
+	cancel context.CancelFunc // /stop 调用它，请求本次执行停止，不影响其他会话。
+	config config.Config      // 启动时的配置副本，执行期间不跟随 /config 改变。
+	tools  []openai.Tool      // 本次请求允许模型调用的工具声明。
+	done   chan struct{}      // 任务结束后关闭；退出程序时等待它，再关闭历史文件。
+	err    error              // 最终执行错误；其他协程必须等 done 关闭后才能读取。
 }
 
-// prepareTask 由主循环同步调用：检查能否执行、保存用户问题、准备取消信号并标记忙碌。
+// prepareTask 由 App 主循环同步调用：读取统一配置，为当前会话准备任务并标记忙碌。
 // 它不请求模型，也不启动 goroutine；必须先准备成功，再调用 RunTask。
-func (s *Session) prepareTask(parent context.Context, query string, tools []openai.Tool) (*task, error) {
+func (a *App) prepareTask(parent context.Context, query string) (*task, error) {
+	s := a.CurrentSession
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -47,14 +48,12 @@ func (s *Session) prepareTask(parent context.Context, query string, tools []open
 
 	// 3. 为这一次执行准备独立的取消信号、完成通知和配置副本。
 	ctx, cancel := context.WithCancel(parent)
-	client := s.client
 	job := &task{
-		ctx:        ctx,
-		cancel:     cancel,
-		client:     &client,
-		tools:      append([]openai.Tool(nil), tools...),
-		projectDir: s.config.ProjectDir,
-		done:       make(chan struct{}),
+		ctx:    ctx,
+		cancel: cancel,
+		config: a.config,
+		tools:  append([]openai.Tool(nil), a.tools...),
+		done:   make(chan struct{}),
 	}
 
 	// 4. 在启动后台任务之前标记忙碌，界面马上就能知道本会话正在执行。

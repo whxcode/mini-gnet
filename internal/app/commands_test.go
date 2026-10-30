@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/whxcode/mini-gnet/config"
-	"github.com/whxcode/mini-gnet/net"
 	"github.com/whxcode/mini-gnet/views/message"
 )
 
@@ -125,8 +124,8 @@ func TestLocalCommandSessionSwitch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	app := &App{}
-	app.attachSession(active, cfg, net.Client{})
+	app := &App{config: cfg}
+	app.attachSession(active)
 	defer app.Close()
 	original := active
 

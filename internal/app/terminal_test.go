@@ -10,7 +10,6 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/whxcode/mini-gnet/config"
-	"github.com/whxcode/mini-gnet/net"
 	"github.com/whxcode/mini-gnet/views/conversation"
 )
 
@@ -107,8 +106,8 @@ func terminalTestApp(t *testing.T) *App {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := &App{}
-	a.attachSession(record, cfg, net.Client{})
+	a := &App{config: cfg}
+	a.attachSession(record)
 	t.Cleanup(func() { a.Close() })
 	return a
 }
@@ -172,7 +171,7 @@ func TestBusyInputRemainsEditable(t *testing.T) {
 	if !m.done || !m.fromEditor || s.draft.Value() != "等待中的问题\n第二行" {
 		t.Fatal("界面应交出原始文本并保留草稿")
 	}
-	if _, err := s.prepareTask(context.Background(), m.query, nil); err == nil {
+	if _, err := a.prepareTask(context.Background(), m.query); err == nil {
 		t.Fatal("主流程允许忙碌会话重复提交")
 	}
 	m = newTerminal(a, context.Background())

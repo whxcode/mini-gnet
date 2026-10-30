@@ -4,19 +4,20 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"strings"
 
 	"github.com/sashabaranov/go-openai"
 	"github.com/whxcode/mini-gnet/config"
-	"github.com/whxcode/mini-gnet/net"
 	toolsList "github.com/whxcode/mini-gnet/tools/list"
+	"github.com/whxcode/mini-gnet/views/conversation"
 )
 
-// App 管理会话列表和输入循环；记录、配置、客户端都只属于 Session，不在 App 重复保存。
+// App 持有应用唯一的运行配置，并管理会话列表和输入循环。
 type App struct {
+	config         config.Config // 全部会话共用，只有主循环中的 /config 修改它。
 	CurrentSession *Session
 	tools          []openai.Tool
 	quit           bool // /exit 的 handler 设置，主循环据此退出。
@@ -44,8 +45,9 @@ func New() (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	current := newSession(session, cfg, net.Client{BaseURL: cfg.BaseURL, ApiKey: cfg.APIKey, Model: cfg.Model, HTTP: &http.Client{}})
+	current := newSession(session)
 	return &App{
+		config:         cfg,
 		CurrentSession: current,
 		opened:         []*Session{current},
 		tools:          tools,
@@ -110,11 +112,16 @@ func (a *App) Run(ctx context.Context) error {
 		// 3. 在启动 goroutine 前占用本会话、保存提问、捕获配置。
 		// 如果放到 goroutine 里才标记忙碌，快速连续发送可能启动两个任务。
 		session := a.CurrentSession
-		job, err := session.prepareTask(ctx, query, a.tools)
+		job, err := a.prepareTask(ctx, query)
 		if err != nil {
+			fmt.Println("加入任务队列:", query)
+			session.updateDisplay(conversation.Event{
+				Kind: conversation.Status, Role: conversation.Assistant, Text: "加入任务队列失败" + query,
+			}) // 保留输入草稿，方便修改或切换会话。
 			a.reportError(err)
 			continue // 保留输入草稿，方便修改或切换会话。
 		}
+
 		session.draft.Reset()
 
 		// 4. 后台执行任务，主循环随即继续接收输入。

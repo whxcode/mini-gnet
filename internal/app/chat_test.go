@@ -15,7 +15,6 @@ import (
 
 	"github.com/sashabaranov/go-openai"
 	"github.com/whxcode/mini-gnet/config"
-	"github.com/whxcode/mini-gnet/net"
 )
 
 // TestRunPipeToolRoundTrip 从应用入口验证请求模型、执行工具、回传结果和保存最终回答的完整顺序。
@@ -39,13 +38,13 @@ func TestRunPipeToolRoundTrip(t *testing.T) {
 		fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer server.Close()
-	cfg := config.Config{ChatsDir: t.TempDir(), ProjectDir: t.TempDir()}
+	cfg := config.Config{ChatsDir: t.TempDir(), ProjectDir: t.TempDir(), BaseURL: server.URL, Model: "test"}
 	session, err := startSession(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := &App{}
-	a.attachSession(session, cfg, net.Client{BaseURL: server.URL, Model: "test", HTTP: server.Client()})
+	a := &App{config: cfg}
+	a.attachSession(session)
 	defer a.Close()
 	if err := a.RunPipe(context.Background(), strings.NewReader("/new\n获取当前目录"), io.Discard); err != nil {
 		t.Fatal(err)
@@ -70,13 +69,13 @@ func TestRunPipeCancellationClosesStream(t *testing.T) {
 		<-r.Context().Done()
 	}))
 	defer server.Close()
-	cfg := config.Config{ChatsDir: t.TempDir(), ProjectDir: t.TempDir()}
+	cfg := config.Config{ChatsDir: t.TempDir(), ProjectDir: t.TempDir(), BaseURL: server.URL, Model: "test"}
 	session, err := startSession(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := &App{}
-	a.attachSession(session, cfg, net.Client{BaseURL: server.URL, Model: "test", HTTP: server.Client()})
+	a := &App{config: cfg}
+	a.attachSession(session)
 	defer a.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
