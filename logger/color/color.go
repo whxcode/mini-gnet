@@ -43,6 +43,7 @@ func formatArgs(args ...any) string {
 
 func render(style lipgloss.Style, icon string, args ...any) string {
 	text := formatArgs(args...)
+
 	if text == "" {
 		return style.Render(icon)
 	}

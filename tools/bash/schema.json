@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "name": "run_bash",
+  "description": "执行一条允许的 Bash 命令，可读取文件、搜索代码或执行用户授权的测试。命令可使用绝对路径，例如 cat /etc/hosts；cwd 仅决定相对路径的起点，不限制访问范围。当前允许 cat、sed、rg、git、go、pwd、ls、find、set，不支持命令串联、管道或重定向。",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "command": {"type": "string", "minLength": 1, "description": "完整单行命令，例如 cat /etc/hosts、pwd、rg -n add ."},
+      "cwd": {"type": "string", "minLength": 1, "description": "可选执行目录。绝对路径直接使用，相对路径（如 ..）相对于默认工作目录解析；省略时使用默认目录，仅影响本次调用。"}
+    },
+    "required": ["command"],
+    "additionalProperties": false
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "stdout": {"type": "string"},
+      "stderr": {"type": "string"},
+      "exit_code": {"type": "integer"}
+    },
+    "required": ["stdout", "stderr", "exit_code"],
+    "additionalProperties": false
+  }
+}

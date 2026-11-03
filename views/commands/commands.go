@@ -1,4 +1,4 @@
-// Package commands 只负责内置命令的菜单显示；命令注册和状态修改位于 internal/app。
+// Package commands 只负责内置命令的菜单显示；命令注册和状态修改位于 internal/command。
 package commands
 
 import (
@@ -10,6 +10,7 @@ import (
 // ShowHelp 在交互入口显示帮助菜单，Esc 关闭；管道文本输出由 RunPipe 负责。
 func ShowHelp(text string) error {
 	_, err := tea.NewProgram(newHelp(text)).Run()
+
 	return err
 }
 
@@ -19,6 +20,7 @@ func EditConfig(cfg config.Config) (*config.Config, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return model.(configModel).saved, nil
 }
 
@@ -28,10 +30,12 @@ func SelectSession(chatsDir, currentID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	model, err := tea.NewProgram(newResume(sessions, currentID)).Run()
 	if err != nil {
 		return "", err
 	}
+
 	return model.(resumeModel).selected, nil
 }
 
@@ -40,16 +44,19 @@ func SelectOpenSession(sessions []message.SessionInfo, currentID string) (string
 	m := newResume(sessions, currentID)
 	m.title = "切换会话（后台任务继续执行）"
 	m.action = "切换"
+
 	for i, s := range sessions {
 		if s.ID == currentID {
 			m.cursor = i
 			break
 		}
 	}
+
 	model, err := tea.NewProgram(m).Run()
 	if err != nil {
 		return "", err
 	}
+
 	return model.(resumeModel).selected, nil
 }
 
@@ -59,5 +66,6 @@ func ConfirmExit(running int) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+
 	return model.(exitModel).confirmed, nil
 }

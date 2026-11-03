@@ -11,7 +11,9 @@ type exitModel struct {
 }
 
 // Init 退出确认不启动后台操作，已有任务仍独立运行。
-func (m exitModel) Init() tea.Cmd { return nil }
+func (m exitModel) Init() tea.Cmd {
+	return nil
+}
 
 // Update 仅在 Enter 时确认退出；Esc 或 Ctrl+C 返回输入界面。
 func (m exitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -19,12 +21,15 @@ func (m exitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch key.String() {
 		case "enter":
 			m.confirmed, m.done = true, true
+
 			return m, tea.Quit
 		case "esc", "ctrl+c":
 			m.done = true
+
 			return m, tea.Quit
 		}
 	}
+
 	return m, nil
 }
 
@@ -33,5 +38,6 @@ func (m exitModel) View() tea.View {
 	if m.done {
 		return tea.NewView("")
 	}
+
 	return tea.NewView(panel.Render(fmt.Sprintf("还有 %d 个会话存在执行或等待任务。\nEnter 取消所有任务并退出 · Esc 返回", m.running)))
 }

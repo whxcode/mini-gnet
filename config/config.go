@@ -1,8 +1,9 @@
+// Package config provides configuration management for the application.
 package config
 
 type Config struct {
 	BaseURL    string `json:"baseUrl"`
-	APIKey     string `json:"apiKey"`
+	APIKey     string `-`
 	Model      string `json:"model"`
 	ChatsDir   string `json:"chatsDir"`
 	ProjectDir string `json:"projectDir"`
@@ -16,7 +17,7 @@ type Config struct {
 }
 */
 
-var DefautConfig Config = Config{
+var defautConfig Config = Config{
 	BaseURL:  "http://localhost:11434/v1",
 	APIKey:   "",
 	Model:    "qwen3:8b",
@@ -29,5 +30,6 @@ func LoadConfig() *Config {
 	if err != nil {
 		panic(err)
 	}
+
 	return &cfg
 }

@@ -7,95 +7,89 @@ import (
 	"strings"
 	"unicode"
 
-	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/whxcode/mini-gnet/internal/agent"
 )
 
-type Role string
+// 显示层使用 Agent 定义的输出类型，核心包不依赖终端组件。
+type Role = agent.Role
+
+type Kind = agent.Kind
+
+type Event = agent.Event
 
 const (
-	User      Role = "user"
-	Assistant Role = "assistant"
-	Tool      Role = "tool"
-	System    Role = "system"
-	Error     Role = "error"
+	Process = agent.Process
+	Final   = agent.Final
 )
-
-type Kind int
 
 const (
-	Message Kind = iota // 完整消息，放入上方的对话记录。
-	Status              // 等待模型、执行工具等状态，更新底部标题。
-	Delta               // 模型新生成的文本片段，只更新底部预览。
+	User      = agent.User
+	Assistant = agent.Assistant
+	Tool      = agent.Tool
+	System    = agent.System
+	Error     = agent.Error
+	Message   = agent.Message
+	Status    = agent.Status
+	Delta     = agent.Delta
 )
-
-type Event struct {
-	Kind Kind
-	Role Role
-	Name string // 用户名、模型名或工具名。
-	Text string
-}
 
 // Username 返回用于消息标题的系统用户名，读取失败时使用“你”。
 func Username() string {
 	if u, err := user.Current(); err == nil && u.Username != "" {
 		return u.Username
 	}
-	return "你"
-}
 
-// roleStyle 为各消息角色选择颜色和图标。
-func roleStyle(role Role) (lipgloss.Style, string) {
-	color := "#A7C7F5"
-	icon := "●"
-	switch role {
-	case User:
-		color = "#9BC5AE"
-	case Assistant:
-		color = "#B9A7DE"
-		icon = "✦"
-	case Tool:
-		color = "#D9BC83"
-		icon = "⚙"
-	case System:
-		color = "#9ABEC9"
-		icon = "◆"
-	case Error:
-		color = "#E3A0A0"
-		icon = "!"
-	}
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(color)), icon
+	return "你"
 }
 
 // cleanText 去掉外部输出里的终端控制序列，避免工具输出改变界面或移动光标。
 func cleanText(s string) string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
+
 	return strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) && r != '\n' && r != '\t' {
 			return -1
 		}
+
 		return r
 	}, ansi.Strip(s))
 }
 
 // Header 生成安全的角色标题，去掉名称中的终端控制字符。
 func Header(role Role, name string) string {
-	style, icon := roleStyle(role)
-	label := string(role)
-	if name != "" {
-		label += " · " + strings.ReplaceAll(cleanText(name), "\n", " ")
-	}
-	return style.Bold(true).Render(icon + " " + label)
+	return eventHeader(Event{
+		Role: role,
+		Name: name,
+	})
 }
 
-// Format 用彩色标题区分角色，正文保持浅色并缩进，避免整段高饱和颜色影响阅读。
+// Format 按来源为标题和整段正文配色；标题加粗、正文缩进，长文本也能区分层次。
 func Format(e Event, width int) string {
-	style := lipgloss.NewStyle().Foreground(lipgloss.Color("#D8DEE9"))
+	if e.Role == User && e.Name == "" {
+		e.Name = Username()
+	}
+
+	if e.Role == Assistant && e.Stage == Final {
+		e.Name = "最终回答"
+
+		if e.Text == "" {
+			e.Text = "模型已结束本次回答，未返回正文。"
+		}
+	}
+
+	if e.Role == Assistant && e.Stage == Process && e.Name == "" {
+		e.Name = "中间轮次"
+	}
+
+	style := bodyStyle(e)
 	body := strings.TrimRight(cleanText(e.Text), "\n")
+
 	if width > 0 {
 		body = ansi.Hardwrap(body, max(1, width-3), true)
 	}
-	return Header(e.Role, e.Name) + "\n" + style.Render("  "+strings.ReplaceAll(body, "\n", "\n  ")) + "\n"
+
+	return eventHeader(e) + "\n" + style.Render("  "+strings.ReplaceAll(body, "\n", "\n  ")) + "\n"
 }
 
 // Print 用于普通日志或非交互管道；流式终端界面使用自己的事件队列。

@@ -16,10 +16,12 @@ type finished struct{}
 // Run 是独立的终端流式组件，只负责显示和取消；多会话应用使用 terminal.go。
 // 通道关闭表示 Agent 已发送完本轮输出；业务错误由应用获取并报告。
 func Run(ctx context.Context, cancel context.CancelFunc, events <-chan Event) error {
-	result, err := tea.NewProgram(newStream(ctx, cancel, events), tea.WithInput(os.Stdin), tea.WithOutput(os.Stdout)).Run()
+	result, err := tea.NewProgram(newStream(ctx, cancel, events), tea.WithInput(os.Stdin), tea.WithOutput(os.Stdout)).
+		Run()
 	if err != nil {
 		return err
 	}
+
 	return result.(streamModel).err
 }
 
@@ -39,9 +41,17 @@ type streamModel struct {
 func newStream(ctx context.Context, cancel context.CancelFunc, events <-chan Event) streamModel {
 	s := spinner.New(spinner.WithSpinner(spinner.Dot))
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("13"))
+
 	return streamModel{
-		ctx: ctx, cancel: cancel, events: events,
-		spin: s, width: 80, status: Event{Role: Assistant, Text: "正在等待模型…"},
+		ctx:    ctx,
+		cancel: cancel,
+		events: events,
+		spin:   s,
+		width:  80,
+		status: Event{
+			Role: Assistant,
+			Text: "正在等待模型…",
+		},
 	}
 }
 
@@ -57,6 +67,7 @@ func (m streamModel) nextEvent() tea.Cmd {
 		if !ok {
 			return finished{}
 		}
+
 		return event
 	}
 }
@@ -70,8 +81,12 @@ func (m streamModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "ctrl+c" {
 			// 等工作协程退出后再恢复输入，避免上一轮仍写会话时用户又开始下一轮。
 			m.cancel()
-			m.status = Event{Role: System, Text: "正在停止当前任务…"}
+			m.status = Event{
+				Role: System,
+				Text: "正在停止当前任务…",
+			}
 		}
+
 	case Event:
 		switch msg.Kind {
 		case Status:
@@ -83,24 +98,37 @@ func (m streamModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.Role == Assistant {
 				m.live = ""
 			}
+
 			// 先打印完整消息，再读取下一事件，防止快速输出时消息顺序颠倒。
 			return m, tea.Sequence(tea.Println(Format(msg, m.width)), m.nextEvent())
 		}
+
 		return m, m.nextEvent()
+
 	case finished:
 		m.done = true
+
 		if m.ctx.Err() != nil {
 			m.err = m.ctx.Err()
 		}
+
 		if m.live != "" {
 			// 请求中断时，保留已经收到的文字，但明确标注它不是完整回答。
-			partial := Event{Role: Assistant, Name: "未完成", Text: m.live}
+			partial := Event{
+				Role: Assistant,
+				Name: "未完成",
+				Text: m.live,
+			}
+
 			return m, tea.Sequence(tea.Println(Format(partial, m.width)), tea.Quit)
 		}
+
 		return m, tea.Quit
 	}
+
 	var cmd tea.Cmd
 	m.spin, cmd = m.spin.Update(msg)
+
 	return m, cmd
 }
 
@@ -108,12 +136,15 @@ func (m streamModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // 完整内容始终由 Agent 保留，预览截断不会影响最终回答或会话存储。
 func preview(s string, width int) string {
 	lines := strings.Split(ansi.Hardwrap(cleanText(s), max(1, width), true), "\n")
+
 	if len(lines) > 2 {
 		lines = lines[len(lines)-2:]
 	}
+
 	for len(lines) < 2 {
 		lines = append(lines, "")
 	}
+
 	return strings.Join(lines, "\n")
 }
 
@@ -122,9 +153,14 @@ func (m streamModel) View() tea.View {
 	if m.done {
 		return tea.NewView("")
 	}
+
 	title := m.spin.View() + " " + Header(m.status.Role, m.status.Name) + "  " + cleanText(m.status.Text)
 	title = ansi.Truncate(title, m.width, "…")
-	style, _ := roleStyle(Assistant)
+	style := bodyStyle(Event{
+		Kind: Delta,
+		Role: Assistant,
+	})
 	body := preview(m.live, max(1, m.width-2))
+
 	return tea.NewView(title + "\n" + style.Render("│ "+strings.ReplaceAll(body, "\n", "\n│ ")))
 }
