@@ -9,6 +9,7 @@ require (
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/google/uuid v1.6.0
 	github.com/sashabaranov/go-openai v1.43.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

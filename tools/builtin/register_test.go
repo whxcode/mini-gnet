@@ -34,7 +34,7 @@ func TestBuiltinsOutsideRepository(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(registry.ModelTools()) != 2 {
+	if len(registry.ModelTools()) != 3 {
 		t.Fatal("内置工具未完整注册")
 	}
 

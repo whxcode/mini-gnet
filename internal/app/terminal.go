@@ -319,6 +319,7 @@ func (m terminalModel) render() (tea.View, conversation.Transcript) {
 	cfg := m.app.config.Current()
 	meta := cfg.Model + "  ·  " + cfg.ProjectDir
 	header += "\n" + workspaceMuted.Render(displayLine(meta, width))
+	header += "\n" + workspaceMuted.Render(displayLine(tokenDetailText(snapshot.Usage), width))
 
 	// 输入框的边框、左右内边距各占两列。textarea 的宽度在 WindowSizeMsg 中同步调整。
 	composer := composerPanel.Width(width - 2).Render(m.session.Draft.View())
@@ -330,6 +331,11 @@ func (m terminalModel) render() (tea.View, conversation.Transcript) {
 
 	footer := workspaceMuted.Render(displayLine(help, width))
 	var statusLines []string
+
+	if snapshot.SelectedSkill != "" {
+		text := "下一条使用技能：" + snapshot.SelectedSkill + " · /skills --clear 取消"
+		statusLines = append(statusLines, workspaceNotice.Render(displayLine(text, width)))
+	}
 
 	if snapshot.Running && snapshot.ProgressText != "" {
 		statusLines = append(statusLines, workspaceMuted.Render(displayLine("◌ "+snapshot.ProgressText, width)))

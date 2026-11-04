@@ -21,6 +21,7 @@ type StreamResult struct {
 	Text      string
 	ToolCalls []openai.ToolCall
 	Finish    openai.FinishReason
+	Usage     *openai.Usage // nil 表示服务没有上报，不能当成零消耗。
 }
 
 // ResponseStream 描述读取协议，测试用假流替代真实网络，不需要业务回调。
@@ -40,6 +41,7 @@ type responseStream struct {
 	text   strings.Builder
 	calls  map[int]*openai.ToolCall
 	finish openai.FinishReason
+	usage  *openai.Usage
 }
 
 // OpenStream 发起模型请求并返回可读取的流；不启动协程，也不调用界面。
@@ -60,6 +62,9 @@ func (c *Client) OpenStream(
 		Messages: messages,
 		Stream:   true,
 		Tools:    tools,
+		StreamOptions: &openai.StreamOptions{
+			IncludeUsage: true,
+		},
 	})
 	if err != nil {
 		return nil, err
@@ -76,6 +81,16 @@ func (s *responseStream) Next() (string, error) {
 	response, err := s.stream.Recv()
 	if err != nil {
 		return "", err
+	}
+
+	// usage 可能在 choices 为空的末尾帧中返回，必须先读取再检查 choices。
+	// 有些兼容服务会重复上报累计值，因此覆盖本轮统计，不能逐帧相加。
+	if response.Usage != nil {
+		s.usage = &openai.Usage{
+			PromptTokens:     response.Usage.PromptTokens,
+			CompletionTokens: response.Usage.CompletionTokens,
+			TotalTokens:      response.Usage.TotalTokens,
+		}
 	}
 
 	if len(response.Choices) == 0 {
@@ -124,6 +139,11 @@ func (s *responseStream) Result() StreamResult {
 		Text:   s.text.String(),
 		Finish: s.finish,
 	}
+	if s.usage != nil {
+		usage := *s.usage
+		result.Usage = &usage
+	}
+
 	indices := make([]int, 0, len(s.calls))
 
 	for index := range s.calls {

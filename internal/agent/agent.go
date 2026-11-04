@@ -39,6 +39,13 @@ func (a *Agent) Run(job *task.Task, history *message.TempMessage, display *Outpu
 		return err
 	}
 
+	// 每项任务读取一次项目规则和技能摘要，同一任务的工具循环复用这份提示词。
+	cfg := a.config.Current()
+	systemPrompt, err := prompt.BuildAgentPrompt(cfg.ProjectDir)
+	if err != nil {
+		return err
+	}
+
 	// 轮到本任务才写入提问，当前任务不会提前读到后面排队的问题。
 	if err := history.AppendUserMessage(job.Query); err != nil {
 		return err
@@ -49,8 +56,7 @@ func (a *Agent) Run(job *task.Task, history *message.TempMessage, display *Outpu
 		Text: job.Query,
 	})
 
-	// 任务对象不存配置或工具。配置在本次执行开始时读取一次，避免同一轮工具循环中途换模型。
-	cfg := a.config.Current()
+	// 任务对象不存配置或工具；本项执行期间不重新读取配置，避免中途换模型。
 	modelTools := a.tools.ModelTools() // 工具列表在应用启动时加载，之后只读，所有会话共用。
 	projectDir := cfg.ProjectDir
 	toolPending := false
@@ -67,7 +73,7 @@ func (a *Agent) Run(job *task.Task, history *message.TempMessage, display *Outpu
 		// 恢复旧会话也使用本次任务的工作目录，避免历史提示词继续指向旧目录。
 		system := openai.ChatCompletionMessage{
 			Role:    openai.ChatMessageRoleSystem,
-			Content: prompt.CheckAgentPrompt(projectDir),
+			Content: systemPrompt,
 		}
 
 		if len(messages) > 0 && messages[0].Role == openai.ChatMessageRoleSystem {
@@ -151,7 +157,19 @@ func (a *Agent) Run(job *task.Task, history *message.TempMessage, display *Outpu
 
 		final := answer.Finish == openai.FinishReasonStop && len(answer.ToolCalls) == 0
 
-		if err := history.AppendResponse(answer.Text, answer.ToolCalls, answer.Finish, final); err != nil {
+		// 每一轮请求单独记录用量，包括中途的工具调用轮次。
+		var usage *message.TokenUsage
+		if answer.Usage != nil {
+			usage = &message.TokenUsage{
+				InputTokens:   answer.Usage.PromptTokens,
+				OutputTokens:  answer.Usage.CompletionTokens,
+				TotalTokens:   answer.Usage.TotalTokens,
+				Model:         cfg.Model,
+				ContextWindow: cfg.ContextWindow,
+			}
+		}
+
+		if err := history.AppendResponse(answer.Text, answer.ToolCalls, answer.Finish, final, usage); err != nil {
 			return err
 		}
 

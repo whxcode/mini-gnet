@@ -40,14 +40,14 @@ func sessionStatus(state sessions.Snapshot) (string, color.Color) {
 func (m terminalModel) sessionGrid(width, maxHeight, currentNumber int) string {
 	hint := "/ps 编号 切换 · F2 列表"
 
-	if maxHeight < 5 {
+	if maxHeight < 7 {
 		return workspaceMuted.Render(displayLine(hint, width))
 	}
 
-	// 一张卡片至少 24 列；横向间隔两列，每排四行，排间留一行。
+	// 一张卡片至少 24 列；两行统计加上标题和边框，每排六行，排间留一行。
 	columns := min(4, max(1, (width+2)/26), len(m.app.opened))
 	cardWidth := (width - (columns-1)*2) / columns
-	rows := min(2, maxHeight/5)
+	rows := min(2, maxHeight/7)
 	pageSize := columns * rows
 	start := (currentNumber - 1) / pageSize * pageSize
 	end := min(start+pageSize, len(m.app.opened))
@@ -82,6 +82,8 @@ func (m terminalModel) sessionGrid(width, maxHeight, currentNumber int) string {
 			textWidth := max(1, cardWidth-4)
 			content := lipgloss.NewStyle().Foreground(color).Render(displayLine(label, textWidth))
 			content += "\n" + workspaceMuted.Render(displayLine(title, textWidth))
+			content += "\n" + workspaceMuted.Render(displayLine(tokenContextText(state.Usage), textWidth))
+			content += "\n" + workspaceMuted.Render(displayLine(tokenContextCountText(state.Usage), textWidth))
 			card := lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(borderColor).

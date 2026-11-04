@@ -123,3 +123,29 @@ func TestExitConfirmation(t *testing.T) {
 		}
 	}
 }
+
+// TestConfigContextWindow 验证上下文上限可编辑，非法值留在菜单，保存时不丢失。
+func TestConfigContextWindow(t *testing.T) {
+	m := newConfig(config.Config{
+		BaseURL:       "http://localhost:11434/v1",
+		Model:         "test",
+		ChatsDir:      t.TempDir(),
+		ContextWindow: 8192,
+	})
+	m.focus = len(m.fields)
+
+	for _, invalid := range []string{"-1", "8k", ""} {
+		m.fields[6].SetValue(invalid)
+		next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		if got := next.(configModel); got.saved != nil || got.done || got.err == "" {
+			t.Fatal("非法上限不应保存")
+		}
+	}
+
+	m.fields[6].SetValue("32768")
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	got := next.(configModel)
+	if got.saved == nil || got.saved.ContextWindow != 32768 {
+		t.Fatal("上下文上限没有保存")
+	}
+}

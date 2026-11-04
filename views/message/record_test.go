@@ -20,11 +20,11 @@ func TestResponseMetadataSurvivesResume(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := history.AppendResponse("中间说明", nil, openai.FinishReasonToolCalls, false); err != nil {
+	if err := history.AppendResponse("中间说明", nil, openai.FinishReasonToolCalls, false, nil); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := history.AppendResponse("最终正文", nil, openai.FinishReasonStop, true); err != nil {
+	if err := history.AppendResponse("最终正文", nil, openai.FinishReasonStop, true, nil); err != nil {
 		t.Fatal(err)
 	}
 

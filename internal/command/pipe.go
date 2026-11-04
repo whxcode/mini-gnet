@@ -9,6 +9,16 @@ import (
 // 应用只负责读取输入、调用此方法和输出错误，不维护第二份命令分支。
 func (c *Command) RunPipe(a Application, args []string, output io.Writer) error {
 	switch {
+	case c.Name == SkillsName && len(args) == 0:
+		text, err := skillsText(a.ConfigStore().Current().ProjectDir)
+		if err != nil {
+			return err
+		}
+
+		_, err = fmt.Fprintln(output, text)
+
+		return err
+
 	case c.Name == ToolsName:
 		text, err := toolsText(a.ToolInfos(), args)
 		if err != nil {

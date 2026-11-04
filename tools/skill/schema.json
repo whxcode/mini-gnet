@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "name": "load_skill",
+  "description": "按技能摘要目录中的名称加载 SKILL.md 正文。用户明确要求某项技能，或任务与技能简介明确匹配时，先加载正文再按说明处理。只读取说明，不自动运行脚本；已在对话中提供的正文不必重复加载。",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "description": "技能摘要中的 name，例如 code-review；不是目录路径。"
+      }
+    },
+    "required": ["name"],
+    "additionalProperties": false
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "name": {"type": "string"},
+      "description": {"type": "string"},
+      "path": {"type": "string"},
+      "directory": {"type": "string"},
+      "content": {"type": "string"}
+    },
+    "required": ["name", "description", "path", "directory", "content"],
+    "additionalProperties": false
+  }
+}

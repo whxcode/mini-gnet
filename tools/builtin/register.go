@@ -5,6 +5,7 @@ import (
 	"github.com/whxcode/mini-gnet/tools"
 	"github.com/whxcode/mini-gnet/tools/bash"
 	"github.com/whxcode/mini-gnet/tools/run"
+	"github.com/whxcode/mini-gnet/tools/skill"
 )
 
 // Load 创建程序自带的工具，调用方可以追加外部工具后统一注册。
@@ -19,7 +20,12 @@ func Load() ([]tools.Tool, error) {
 		return nil, err
 	}
 
-	return []tools.Tool{bashTool, pythonTool}, nil
+	skillTool, err := skill.New()
+	if err != nil {
+		return nil, err
+	}
+
+	return []tools.Tool{bashTool, pythonTool, skillTool}, nil
 }
 
 // NewRegistry 创建仅含内置工具的注册表，供独立调用和测试使用。

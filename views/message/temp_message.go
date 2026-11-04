@@ -14,10 +14,11 @@ import (
 
 // TempMessage 将会话消息同时保存到 JSONL 文件和模型使用的内存上下文。
 type TempMessage struct {
-	SessionID string     // 会话编号，也是记录文件名。
-	fd        *os.File   // 当前会话的记录文件。
-	mtx       sync.Mutex // 保护文件写入和内存消息。
-	chats     []Record   // 已成功保存的消息及本地显示标记。
+	SessionID string       // 会话编号，也是记录文件名。
+	fd        *os.File     // 当前会话的记录文件。
+	mtx       sync.Mutex   // 保护文件写入和内存消息。
+	chats     []Record     // 已成功保存的消息及本地显示标记。
+	usage     UsageSummary // 会话统计与聊天记录在同一把锁内更新。
 }
 
 // Record 保持原来的 JSONL 消息字段，额外保存响应标记和进程信息；请求模型时只取 SDK 消息。
@@ -31,6 +32,7 @@ type Record struct {
 type ResponseInfo struct {
 	Finish openai.FinishReason `json:"finish_reason"`
 	Final  bool                `json:"final"`
+	Usage  *TokenUsage         `json:"usage,omitempty"` // nil 代表未知；不进入模型上下文。
 }
 
 var _ imp.Message = (*TempMessage)(nil)
@@ -79,6 +81,7 @@ func (t *TempMessage) append(message Record) error {
 	}
 
 	t.chats = append(t.chats, message)
+	t.usage.add(message)
 
 	return nil
 }
@@ -120,7 +123,13 @@ func (t *TempMessage) AppendResponse(
 	calls []openai.ToolCall,
 	finish openai.FinishReason,
 	final bool,
+	usage *TokenUsage,
 ) error {
+	if usage != nil {
+		copy := *usage
+		usage = &copy
+	}
+
 	return t.append(Record{
 		ChatCompletionMessage: openai.ChatCompletionMessage{
 			Role:      openai.ChatMessageRoleAssistant,
@@ -130,6 +139,7 @@ func (t *TempMessage) AppendResponse(
 		Response: &ResponseInfo{
 			Finish: finish,
 			Final:  final,
+			Usage:  usage,
 		},
 	})
 }

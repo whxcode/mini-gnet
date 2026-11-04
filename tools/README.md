@@ -1,6 +1,6 @@
 # 工具定义、注册与调用
 
-启动时注册 `run_bash`、`run_python`，再加载配置目录中的外部工具。所有工具都实现 `Tool`，Agent 只按名称调用注册表，不按工具来源或名称写执行分支。
+启动时注册 `run_bash`、`run_python`、`load_skill`，再加载配置目录中的外部工具。所有工具都实现 `Tool`，Agent 只按名称调用注册表，不按工具来源或名称写执行分支。
 
 ```text
 tools/
@@ -21,6 +21,9 @@ tools/
     schema.json       run_python 定义
     tool.go           参数与调用接口
     python.go         临时脚本执行与清理
+  skill/
+    schema.json       load_skill 定义
+    tool.go           共用 internal/skill 加载正文，不启动子进程
 ```
 
 内置工具的 `schema.json` 使用 `go:embed` 编译进程序，修改内置定义需要重新编译。外部工具的 `tool.json` 在启动时从磁盘读取，添加或修改后重启即可，不需要重新编译。
@@ -90,6 +93,16 @@ cwd 省略时使用默认目录；绝对路径直接使用，相对路径基于�
 ```
 
 Python 保留临时目录语义：创建 main.py、执行、清理。访问项目或其他文件时，代码可使用绝对路径。运行环境仍需要 Bash / python3；嵌入的是工具定义，不是解释器。
+
+`load_skill` 参数：
+
+```json
+{"name":"code-review"}
+```
+
+按工作目录下 `.agent/skills` 的技能名称查找，返回 `name`、`description`、`path`、`directory`、`content`。不把 name 当路径，不启动脚本，也不需要解释器；与 `/skills` 手动选择共用 `internal/skill.Load`。`directory` 是正文中相对资源的基准目录。
+
+返回值仍使用统一的 `ok/data/error` 外层，未知名称、读取失败和空正文均返回错误。Agent 正常保存 tool 结果后继续请求模型，历史里保留完整正文。
 
 ## 统一输出
 

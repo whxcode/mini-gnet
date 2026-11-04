@@ -49,6 +49,10 @@ func loadFile(path string, defaults Config) (Config, error) {
 }
 
 func Normalize(cfg Config) (Config, error) {
+	if cfg.ContextWindow < 0 {
+		return Config{}, fmt.Errorf("上下文上限不能小于 0；未知时填写 0")
+	}
+
 	cfg.BaseURL = strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
 	u, err := url.Parse(cfg.BaseURL)
 	if err != nil ||

@@ -11,12 +11,17 @@ import (
 
 // NewHistory 创建记录文件并保存当前工作目录对应的系统提示词。
 func NewHistory(cfg config.Config) (*message.TempMessage, error) {
+	systemPrompt, err := prompt.BuildAgentPrompt(cfg.ProjectDir)
+	if err != nil {
+		return nil, err
+	}
+
 	session, err := message.New(cfg.ChatsDir)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := session.AppendSystemMessage(prompt.CheckAgentPrompt(cfg.ProjectDir)); err != nil {
+	if err := session.AppendSystemMessage(systemPrompt); err != nil {
 		session.Close()
 
 		return nil, err

@@ -19,6 +19,7 @@ const (
 	PSName       Name = "/ps"
 	StopName     Name = "/stop"
 	ToolsName    Name = "/tools"
+	SkillsName   Name = "/skills"
 )
 
 // Handler 接收当前应用的操作接口，完成命令后只返回错误。
@@ -50,6 +51,12 @@ func builtinCommands() []Command {
 			Name:        ConfigName,
 			Description: "编辑配置，保存后立即生效",
 			Handler:     handleConfig,
+		},
+		{
+			Name:        SkillsName,
+			Description: "为下一条提问选择技能；/skills <名称> 直选，--clear 取消待选",
+			MaxArgs:     1,
+			Handler:     handleSkills,
 		},
 		{
 			Name:        ResumeName,

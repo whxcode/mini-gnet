@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"strconv"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -15,6 +16,7 @@ var fieldLabels = []string{
 	"聊天记录目录",
 	"工作目录（留空使用启动目录）",
 	"工具目录（默认 my_tools，修改后重启生效）",
+	"上下文上限 tokens（仅供统计，0 表示未知）",
 }
 
 type configModel struct {
@@ -34,6 +36,7 @@ func newConfig(cfg config.Config) configModel {
 		cfg.ChatsDir,
 		cfg.ProjectDir,
 		cfg.ToolsDir,
+		strconv.Itoa(cfg.ContextWindow),
 	}
 	m := configModel{width: 78}
 
@@ -80,13 +83,20 @@ func (m configModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "tab", "down", "shift+tab", "up", "enter":
 			if msg.String() == "enter" && m.focus == len(m.fields) {
+				contextWindow, err := strconv.Atoi(strings.TrimSpace(m.fields[6].Value()))
+				if err != nil || contextWindow < 0 {
+					m.err = "上下文上限必须是非负整数；未知时填写 0"
+					return m, nil
+				}
+
 				cfg, err := config.Normalize(config.Config{
-					BaseURL:    m.fields[0].Value(),
-					Model:      m.fields[1].Value(),
-					APIKey:     m.fields[2].Value(),
-					ChatsDir:   m.fields[3].Value(),
-					ProjectDir: m.fields[4].Value(),
-					ToolsDir:   m.fields[5].Value(),
+					BaseURL:       m.fields[0].Value(),
+					Model:         m.fields[1].Value(),
+					APIKey:        m.fields[2].Value(),
+					ChatsDir:      m.fields[3].Value(),
+					ProjectDir:    m.fields[4].Value(),
+					ToolsDir:      m.fields[5].Value(),
+					ContextWindow: contextWindow,
 				})
 				if err != nil {
 					m.err = err.Error()

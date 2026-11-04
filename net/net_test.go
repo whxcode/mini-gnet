@@ -131,3 +131,87 @@ func TestStreamCancellationStopsRead(t *testing.T) {
 		t.Fatalf("read did not cancel: %v", err)
 	}
 }
+
+// TestStreamUsage 验证末尾独立用量帧、同帧上报、重复累计值和未上报时的区别。
+func TestStreamUsage(t *testing.T) {
+	cases := []struct {
+		name   string
+		frames []string
+		known  bool
+	}{
+		{
+			name: "usage-only-final-frame",
+			frames: []string{
+				`{"choices":[{"delta":{"content":"完成"},"finish_reason":"stop"}]}`,
+				`{"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":25,"total_tokens":125}}`,
+			},
+			known: true,
+		},
+		{
+			name: "repeated-cumulative-usage",
+			frames: []string{
+				`{"choices":[{"delta":{"content":"完成"},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":25,"total_tokens":125}}`,
+				`{"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":25,"total_tokens":125}}`,
+			},
+			known: true,
+		},
+		{
+			name: "provider-does-not-report",
+			frames: []string{
+				`{"choices":[{"delta":{"content":"完成"},"finish_reason":"stop"}],"usage":null}`,
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var request openai.ChatCompletionRequest
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					t.Error(err)
+				}
+				if request.StreamOptions == nil || !request.StreamOptions.IncludeUsage {
+					t.Error("没有请求流式 usage")
+				}
+
+				w.Header().Set("Content-Type", "text/event-stream")
+				for _, frame := range tc.frames {
+					fmt.Fprintf(w, "data: %s\n\n", frame)
+				}
+				fmt.Fprint(w, "data: [DONE]\n\n")
+			}))
+			defer server.Close()
+
+			client := Client{BaseURL: server.URL, Model: "test"}
+			stream, err := client.OpenStream(context.Background(), nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer stream.Close()
+
+			for {
+				_, err := stream.Next()
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			result := stream.Result()
+			if result.Text != "完成" || (result.Usage != nil) != tc.known {
+				t.Fatalf("用量状态或正文不正确：%+v", result)
+			}
+			if tc.known {
+				if result.Usage.PromptTokens != 100 || result.Usage.CompletionTokens != 25 || result.Usage.TotalTokens != 125 {
+					t.Fatalf("重复计数或漏计：%+v", result.Usage)
+				}
+				result.Usage.TotalTokens = 999
+				if stream.Result().Usage.TotalTokens != 125 {
+					t.Fatal("返回值修改了流内部统计")
+				}
+			}
+		})
+	}
+}

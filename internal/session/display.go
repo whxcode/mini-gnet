@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/whxcode/mini-gnet/views/conversation"
+	"github.com/whxcode/mini-gnet/views/message"
 )
 
 // Snapshot 是界面读取的一份副本，没有模型客户端或文件句柄。
@@ -19,6 +20,8 @@ type Snapshot struct {
 	ProgressText    string               // 当前执行步骤的提示。
 	HasUnreadResult bool                 // 是否需要提示有新结果。
 	UpdatedAt       time.Time            // 最近更新时间。
+	Usage           message.UsageSummary // 本会话已记录的 token 用量。
+	SelectedSkill   string               // 下一次提问待附加的技能名称。
 }
 
 // Snapshot 由界面调用，在同一把锁内复制显示字段，避免一边读一边被后台修改。
@@ -41,6 +44,11 @@ func (s *Session) Snapshot() Snapshot {
 		updated = output.UpdatedAt
 	}
 
+	selectedSkill := ""
+	if s.selectedSkill != nil {
+		selectedSkill = s.selectedSkill.Name
+	}
+
 	return Snapshot{
 		ID:              s.History.SessionID,
 		Title:           s.title,
@@ -52,6 +60,8 @@ func (s *Session) Snapshot() Snapshot {
 		ProgressText:    output.ProgressText,
 		HasUnreadResult: s.hasUnreadResult,
 		UpdatedAt:       updated,
+		Usage:           s.History.Usage(),
+		SelectedSkill:   selectedSkill,
 	}
 }
 

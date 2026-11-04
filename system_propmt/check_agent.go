@@ -35,7 +35,7 @@ func CheckAgentPrompt(projectDir ...string) string {
 11. 正常回答使用自然语言，不要强制返回 JSON。
 
 
-当前内置工具为 run_bash 和 run_python，实际可调用工具与参数以请求中的工具声明为准。
+当前内置工具为 run_bash、run_python 和 load_skill，实际可调用工具与参数以请求中的工具声明为准。
 应用启动时也会注册工具目录中的工具。根据各工具的说明和参数直接调用，无需自行启动脚本。
 工具统一返回 JSON：ok 表示本次工具调用是否成功，data 是业务结果，error 在失败时包含 code 和 message。
 run_bash 和 run_python 的 data 包含 stdout、stderr、exit_code；其他工具的 data 使用各自的业务结构。

@@ -9,6 +9,7 @@ internal/
   session/   会话记录、任务队列、顺序消费、停止与退出
   agent/     模型流、工具调用、有限重试、输出记录
   task/      单次任务的输入、取消信号和完成结果
+  skill/     扫描技能目录、解析 SKILL.md 中的名称与简介
 ```
 
 依赖方向是 `app → session → agent → task`；App 同时负责创建共用的 Agent，Session 也使用 Task。
@@ -86,6 +87,22 @@ Task 的五个字段分别是：`Query` 输入、`Context` 接收取消信号、
 消费者取得处理权后调用一次 `Complete`；等待者在 Done 关闭后读取 Err。
 `context.Background()` 是不自行取消或超时的根上下文，不会启动线程。
 超时时长由 `task.New` 设置，从提交开始计时，排队也计时。
+
+## 工作目录中的项目规则与技能摘要
+
+运行时读取的是工作目录下的 `.agent/AGENTS.md` 和 `.agent/skills/<技能目录>/SKILL.md`，不是项目根目录供开发助手使用的 `AGENTS.md`。工作目录来自 `config.ProjectDir`，未设置时使用启动目录。
+
+`system_propmt.BuildAgentPrompt` 依次组装基础提示词、项目规则正文、技能摘要目录。技能 YAML 中只使用 `name` 和 `description`，并附文件位置；不自动注入正文、执行脚本或注册同名工具。
+
+`Session.NewHistory` 保存创建会话时的系统提示词。`Agent.Run` 在每项任务开始时重新构建提示词，后续工具循环复用这份快照；请求时替换旧的 system 消息，不反复追加。这样恢复旧会话或修改 `.agent` 文件后，下一项任务使用当前规则；同一任务中途不切换规则。
+
+缺少目录或规则文件时正常运行；技能 YAML 损坏、重复名称或文件读取失败时，返回包含路径的错误。最小示例与手动验证步骤见项目根目录的 `.agent/README.md`。
+
+手动入口是 `/skills` 菜单或 `/skills <名称>`：handler 使用 `internal/skill.Load` 读取正文，Session 保存下一条问题的待选技能，成功入队时把正文与问题合成普通 user 消息，并清除待选。
+
+自动入口是注册表中的 `load_skill` 工具：模型根据摘要选择，工具使用同一个加载函数，返回正文与资源目录。Agent 按普通工具调用保存结果，然后继续模型循环；无需在 Agent 中为技能写特殊分支。
+
+两种方式都保留正常历史，不在任务结束时移除技能内容。`/skills --clear` 只取消待选，`/new` 开始不带旧正文的会话。`/resume` 恢复原有 user/tool 消息，无需单独恢复技能状态。
 
 ## 多轮响应与最终回答
 

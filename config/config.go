@@ -2,12 +2,13 @@
 package config
 
 type Config struct {
-	BaseURL    string `json:"baseUrl"`
-	APIKey     string `-`
-	Model      string `json:"model"`
-	ChatsDir   string `json:"chatsDir"`
-	ProjectDir string `json:"projectDir"`
-	ToolsDir   string `json:"toolsDir"` // 外部工具目录；相对路径以项目目录为起点。
+	BaseURL       string `json:"baseUrl"`
+	APIKey        string `-`
+	Model         string `json:"model"`
+	ChatsDir      string `json:"chatsDir"`
+	ProjectDir    string `json:"projectDir"`
+	ToolsDir      string `json:"toolsDir"`                // 外部工具目录；相对路径以项目目录为起点。
+	ContextWindow int    `json:"contextWindow,omitempty"` // 当前服务实际使用的上下文上限；0 表示未知，仅供占比展示。
 }
 
 /*

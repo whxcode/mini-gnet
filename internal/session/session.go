@@ -12,6 +12,7 @@ import (
 
 	"charm.land/bubbles/v2/textarea"
 	"github.com/whxcode/mini-gnet/internal/agent"
+	"github.com/whxcode/mini-gnet/internal/skill"
 	tasks "github.com/whxcode/mini-gnet/internal/task"
 	"github.com/whxcode/mini-gnet/views/conversation"
 	"github.com/whxcode/mini-gnet/views/input"
@@ -40,6 +41,7 @@ type Session struct {
 	title           string           // 会话列表中的标题，默认取第一条用户提问。
 	hasUnreadResult bool             // 本轮已有结果但还没查看，用于后台完成提醒。
 	updatedAt       time.Time        // 最近一次状态或文字更新的时间，用于会话列表。
+	selectedSkill   *skill.Document  // 只为下一次提问准备，成功入队后清除；已写入历史的正文不受影响。
 }
 
 // New 根据聊天记录创建一个窗口；加载历史只恢复显示，不执行历史任务。
@@ -87,13 +89,19 @@ func (s *Session) Enqueue(parent context.Context, query string) (*tasks.Task, er
 		return nil, fmt.Errorf("当前会话的等待队列已满（%d 项），请稍后再发送", cap(s.taskQueue))
 	}
 
-	job := tasks.New(parent, query)
+	// 手动选择时直接合成普通提问，后续执行和持久化继续走原来的流程。
+	prompt := query
+	if s.selectedSkill != nil {
+		prompt = s.selectedSkill.WithQuery(query)
+	}
+	job := tasks.New(parent, prompt)
 
 	// 使用非阻塞发送：队列满时保留输入，不能让主循环卡在这里。
 	select {
 	case s.taskQueue <- job:
 		s.pending = append(s.pending, job)
 		s.updatedAt = time.Now()
+		s.selectedSkill = nil
 
 		if s.title == "新会话" {
 			s.title = strings.Join(strings.Fields(query), " ")

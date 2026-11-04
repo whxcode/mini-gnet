@@ -157,9 +157,14 @@ func Resume(chatsDir, id string) (*TempMessage, error) {
 		}
 	}
 
-	return &TempMessage{
+	history := &TempMessage{
 		SessionID: id,
 		fd:        fd,
 		chats:     chats,
-	}, nil
+	}
+	for _, record := range chats {
+		history.usage.add(record)
+	}
+
+	return history, nil
 }
