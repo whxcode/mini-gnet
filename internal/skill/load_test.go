@@ -29,11 +29,6 @@ func TestLoadByMetadataName(t *testing.T) {
 		t.Fatalf("正文或相对资源基准错误：%+v", document)
 	}
 
-	query := document.WithQuery("检查这次修改")
-	if strings.Count(query, document.Content) != 1 || !strings.Contains(query, "检查这次修改") || !strings.Contains(query, directory) {
-		t.Fatal("手动提问没有完整保留问题、正文或资源位置")
-	}
-
 	for _, name := range []string{"", "review-folder", "missing", "../review-folder/SKILL.md", path} {
 		if _, err := Load(project, name); err == nil {
 			t.Fatalf("未知名称 %q 不应加载成功", name)

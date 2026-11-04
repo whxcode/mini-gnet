@@ -147,7 +147,13 @@ func (a *App) Run(ctx context.Context) error {
 
 		// 3. 只提交到当前会话的队列；任务由该会话自己的 Run 循环顺序执行。
 		session := a.CurrentSession
-		_, err = session.Enqueue(ctx, query)
+		input, err := session.Draft.Submission()
+		if err != nil {
+			a.reportError(err)
+			continue
+		}
+
+		_, err = session.EnqueueInput(ctx, input)
 		if err != nil {
 			a.reportError(err)
 			continue // 保留输入草稿，方便修改或切换会话。

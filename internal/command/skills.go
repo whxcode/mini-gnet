@@ -5,70 +5,45 @@ import (
 	"strings"
 
 	"github.com/whxcode/mini-gnet/internal/skill"
-	menus "github.com/whxcode/mini-gnet/views/commands"
 )
 
-// handleSkills 选择并加载下一条提问使用的技能；Esc 保留原选择，不执行模型任务。
+// handleSkills 仅展示技能目录或指定技能说明，不修改草稿或设置下一条任务的技能。
 func handleSkills(a Application, args []string) error {
-	projectDir := a.ConfigStore().Current().ProjectDir
-	name := ""
-
-	if len(args) > 0 {
-		name = args[0]
-	} else {
-		summaries, err := skill.Discover(projectDir)
-		if err != nil {
-			return err
-		}
-
-		name, err = menus.SelectSkill(summaries, a.ActiveSession().Snapshot().SelectedSkill)
-		if err != nil || name == "" {
-			return err
-		}
-	}
-
-	if name == "--clear" {
-		if err := a.ActiveSession().SelectSkill(nil); err != nil {
-			return err
-		}
-
-		a.Notify("已取消下一条提问的待选技能；聊天历史中的技能正文仍保留。")
-
-		return nil
-	}
-
-	document, err := skill.Load(projectDir, name)
+	text, err := skillsText(a.ConfigStore().Current().ProjectDir, args)
 	if err != nil {
 		return err
 	}
-
-	if err := a.ActiveSession().SelectSkill(&document); err != nil {
-		return err
-	}
-
-	a.Notify("已选择技能 " + document.Name + "，请输入问题；成功提交后会把技能正文与问题一起保存。")
+	a.Notify(text)
 	return nil
 }
 
-// skillsText 为管道列出技能名称和简介，不打开交互菜单或读取正文。
-func skillsText(projectDir string) (string, error) {
+// skillsText 为交互与管道生成相同说明，用户直接在提问中引用技能。
+func skillsText(projectDir string, args []string) (string, error) {
+	if len(args) > 0 && args[0] == "--clear" {
+		return "", fmt.Errorf("已改为行内技能标签；请直接在输入框删除标签，不再设置待选技能")
+	}
+
 	summaries, err := skill.Discover(projectDir)
 	if err != nil {
 		return "", err
 	}
-
 	if len(summaries) == 0 {
 		return "当前工作目录的 .agent/skills 下没有技能。", nil
 	}
 
 	var text strings.Builder
 	text.WriteString("可用技能：\n")
-
+	found := len(args) == 0
 	for _, summary := range summaries {
-		fmt.Fprintf(&text, "\n%s\n  %s\n", summary.Name, summary.Description)
+		if len(args) > 0 && summary.Name != args[0] {
+			continue
+		}
+		found = true
+		fmt.Fprintf(&text, "\n◆ %s\n  %s\n  /skills{%s}\n", summary.Name, summary.Description, summary.Name)
 	}
-
-	text.WriteString("\n使用 /skills <名称> 选择，然后在下一行输入问题。/skills --clear 取消待选。")
-
+	if !found {
+		return "", fmt.Errorf("未找到技能 %q", args[0])
+	}
+	text.WriteString("\n在问题中输入 / 打开候选，或写：请使用 /skills{名称} 检查当前项目。")
 	return text.String(), nil
 }

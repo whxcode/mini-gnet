@@ -9,7 +9,8 @@ internal/
   session/   会话记录、任务队列、顺序消费、停止与退出
   agent/     模型流、工具调用、有限重试、输出记录
   task/      单次任务的输入、取消信号和完成结果
-  skill/     扫描技能目录、解析 SKILL.md 中的名称与简介
+  query/     文字/引用片段、输入语法和执行时的消息组装
+  skill/     扫描技能目录、解析和读取 SKILL.md
 ```
 
 依赖方向是 `app → session → agent → task`；App 同时负责创建共用的 Agent，Session 也使用 Task。
@@ -19,10 +20,10 @@ Session、Agent、Task 都不导入 App，Agent 不导入 Session 或终端显�
 
 ## 按顺序读代码
 
-1. `app/app.go`：加载配置和工具、创建 Agent；主循环读取输入，命令直接调用 handler，普通提问调用 `session.Enqueue(ctx, query)`。
+1. `app/app.go`：加载配置和工具、创建 Agent；主循环读取输入，命令直接调用 handler，普通提问调用 `session.EnqueueInput(ctx, input)`；管道文本先解析引用再入队。
 2. `app/workspace.go`：首次创建或恢复会话时调用 `session.New`，然后明确执行一次 `go s.Run()`。切换已有会话只修改当前会话指针。
-3. `session/session.go`：`Enqueue` 入队；`Run` 取出一个任务，依次标记开始、调用 Agent、记录结束，再取下一项。
-4. `agent/agent.go`：`Agent.Run` 保存提问，发起模型请求，逐段读取流，保存回答，执行工具；需要继续时进入下一轮。
+3. `session/session.go`：`EnqueueInput` 复制输入并入队；`Run` 取出一个任务，依次标记开始、调用 Agent、记录结束，再取下一项。
+4. `agent/agent.go`：`Agent.Run` 加载本项引用并保存提问，发起模型请求，逐段读取流，保存回答，执行工具；需要继续时进入下一轮。
 5. `task/task.go`：任务取消和完成通知。Task 不持有配置、客户端或工具列表。
 
 本地命令分支先读 `command/registry.go`，再读 `command/handlers.go`；菜单渲染仍在 `views/commands`。
@@ -55,6 +56,7 @@ Agent 可以脱离会话队列单独调用，`agent/agent_test.go` 演示了这�
 | `agent/agent.go` | 模型与工具的顺序执行流程及统一失败处理 |
 | `tools/registry.go`、`tools/builtin/register.go`（项目根目录） | 统一工具接口、schema 校验、内置工具注册 |
 | `agent/event.go`、`output.go` | 输出事件及带锁的输出记录；视图读取快照后排版 |
+| `query/input.go`、`resolve.go` | 结构化输入、显式语法和任务开始时的技能正文组装 |
 | `task/task.go` | 本项输入、取消、完成通知及最终错误 |
 | `config/store.go` | 唯一运行配置的并发读写 |
 
@@ -83,7 +85,7 @@ App 先对全部会话调用 Shutdown，再逐一 Close，避免等待一个会�
 Agent 开始一项任务时读取配置到局部变量，本项的工具循环中不会突然更换模型或工作目录。
 改变记录目录不会迁移已打开文件；旧会话仍追加到原文件。
 
-Task 的五个字段分别是：`Query` 输入、`Context` 接收取消信号、`cancel` 发出取消信号、`Done` 通知结束、`Err` 保存结果。
+Task 的五个字段分别是：`Input` 结构化输入副本、`Context` 接收取消信号、`cancel` 发出取消信号、`Done` 通知结束、`Err` 保存结果。
 消费者取得处理权后调用一次 `Complete`；等待者在 Done 关闭后读取 Err。
 `context.Background()` 是不自行取消或超时的根上下文，不会启动线程。
 超时时长由 `task.New` 设置，从提交开始计时，排队也计时。
@@ -98,11 +100,11 @@ Task 的五个字段分别是：`Query` 输入、`Context` 接收取消信号、
 
 缺少目录或规则文件时正常运行；技能 YAML 损坏、重复名称或文件读取失败时，返回包含路径的错误。最小示例与手动验证步骤见项目根目录的 `.agent/README.md`。
 
-手动入口是 `/skills` 菜单或 `/skills <名称>`：handler 使用 `internal/skill.Load` 读取正文，Session 保存下一条问题的待选技能，成功入队时把正文与问题合成普通 user 消息，并清除待选。
+手动入口是提问中的技能标签，例如“请使用 /skills{code-review} 检查项目”。输入框提供独立的 `kind/value` 片段，Session 入队，Task 复制保存。Agent 开始执行时调用 `Input.Resolve` 读取正文并组装普通 user 消息，同任务后续轮次不再加载。详情见 `query/README.md`。
 
 自动入口是注册表中的 `load_skill` 工具：模型根据摘要选择，工具使用同一个加载函数，返回正文与资源目录。Agent 按普通工具调用保存结果，然后继续模型循环；无需在 Agent 中为技能写特殊分支。
 
-两种方式都保留正常历史，不在任务结束时移除技能内容。`/skills --clear` 只取消待选，`/new` 开始不带旧正文的会话。`/resume` 恢复原有 user/tool 消息，无需单独恢复技能状态。
+两种方式都保留正常历史，不在任务结束时移除技能内容。直接删除输入中的标签即可取消引用；`/new` 开始不带旧正文的会话。`/resume` 恢复原有 user/tool 消息，使用本地 `user_input` 片段恢复简短问题；该元数据不进入模型请求。
 
 ## 多轮响应与最终回答
 

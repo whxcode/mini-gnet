@@ -46,14 +46,20 @@ func (a *Agent) Run(job *task.Task, history *message.TempMessage, display *Outpu
 		return err
 	}
 
+	// 本项只组装一次引用内容。排队期间文件更新时，以开始执行时读取的正文为准。
+	userMessage, err := job.Input.Resolve(ctx, cfg.ProjectDir)
+	if err != nil {
+		return err
+	}
+
 	// 轮到本任务才写入提问，当前任务不会提前读到后面排队的问题。
-	if err := history.AppendUserMessage(job.Query); err != nil {
+	if err := history.AppendInputMessage(userMessage, job.Input); err != nil {
 		return err
 	}
 
 	display.Update(Event{
 		Role: User,
-		Text: job.Query,
+		Text: job.Input.Label(),
 	})
 
 	// 任务对象不存配置或工具；本项执行期间不重新读取配置，避免中途换模型。

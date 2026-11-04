@@ -7,8 +7,8 @@
 | `/help` | 查看命令与快捷键，Esc 或 Enter 返回 |
 | `/tools` | 查看当前已注册工具、说明、参数类型及必填/可选状态 |
 | `/tools <工具名>` | 查看完整工具定义，包含输入和输出 schema |
-| `/skills` | 查看技能名称与简介，上下选择、Enter 确认，Esc 返回 |
-| `/skills <名称>` | 为下一条提问选择技能；`/skills --clear` 取消待选 |
+| `/skills` | 查看技能名称、简介与行内引用写法 |
+| `/skills <名称>` | 查看指定技能简介；在问题中使用 `/skills{名称}` 引用 |
 | `/config` | 编辑接口地址、模型、API Key、目录和统计用上下文上限 |
 | `/resume` | 从当前配置的 `ChatsDir` 读取 `.jsonl` 历史，上下选择、Enter 恢复 |
 | `/resume <会话ID>` | 直接恢复指定会话，也可用于管道输入 |
@@ -24,11 +24,13 @@
 
 本目录只负责交互菜单，不检测终端环境。`main.go` 在启动时选择入口；管道中的文本帮助、会话列表以及菜单不可用提示统一放在 `internal/command/pipe.go`。
 
-## 技能选择
+## 技能引用
 
-待选技能显示在输入框上方，提交普通问题后与正文一起存为 user 消息，成功入队即清除待选状态。菜单只选择，不运行模型。管道中的 `/skills` 使用文本列表。
+在提问中输入 `/` 打开候选。句首显示命令和技能，正文中只显示技能；↑↓ 或 Tab 选择，Enter 确认标签，Esc 关闭。确认候选不会发送消息，继续输入后再次 Enter 才发送。
 
-模型也可以通过 `load_skill` 自行读取正文，结果保存为正常 tool 消息。两条路径都保留聊天历史；`/skills --clear` 不删除已保存的正文，使用 `/new` 开始干净会话。详细格式和测试步骤见 `.agent/README.md`。
+也可以直接写“请使用 /skills{code-review} 检查项目”。技能在输入框里显示为紫色标签，左右键和删除按整体处理。`/skills` 仅查看目录，不再设置下一条任务的技能。
+
+模型也可以通过 `load_skill` 自行读取正文。手动与自动的正文都保留在正常历史；使用 `/new` 开始不带旧正文的会话。格式和测试步骤见 `.agent/README.md`。
 
 ## 配置
 
@@ -54,7 +56,7 @@
 
 ## 阅读代码
 
-1. `internal/command/registry.go`：`builtinCommands()` 统一登记命令，`Lookup` 只查找命令与检查参数。
+1. `internal/command/registry.go`：`List()` 统一登记命令，`Lookup` 只查找命令与检查参数。
 2. `internal/app/app.go`：主循环拿到命令后直接调用 `command.Handler(a, args)`，只处理返回的错误。
 3. `internal/command/handlers.go`：每个 handler 接收 `Application` 接口（实际传入 `*App`），完成菜单交互、保存配置或切换会话等全部操作，只返回 `error`。
 4. 本目录的 `commands.go`、`menu.go`、`config.go`：只负责菜单显示，向 handler 返回具体选择；Esc 返回空选择。
@@ -62,6 +64,6 @@
 
 handler 位于独立的 `internal/command` 包。`application.go` 列出它需要的应用操作，App 实现这些方法，命令包不导入 App，因此不会循环引用。按 Esc 时 handler 直接返回，不改变当前会话或配置。这里没有通用的 `Result`，也没有再次解释结果的 `applyLocalCommand`。
 
-新增命令时，定义一个命令名称常量、编写对应 handler，再在 `builtinCommands()` 中登记一项即可；无需增加字符串 `switch` 分支。`MaxArgs` 默认为 0，表示不接受参数。注册表使用有序列表，帮助菜单的顺序也由它决定。
+新增命令时，定义一个命令名称常量、编写对应 handler，再在 `List()` 中登记一项即可；无需增加字符串 `switch` 分支。`MaxArgs` 默认为 0，表示不接受参数。注册表使用有序列表，帮助菜单的顺序也由它决定。
 
 会话切换和任务执行的完整说明见 `internal/README.md`。所有命令仍由 handler 直接操作 App，菜单不承担任务执行。

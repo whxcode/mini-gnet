@@ -68,6 +68,7 @@ func readHistory(path string) ([]Record, bool, error) {
 	}
 }
 
+// List 列出聊天记录，优先使用原始输入生成标题，避免把技能正文显示为会话名称。
 func List(chatsDir string) ([]SessionInfo, error) {
 	entries, err := os.ReadDir(chatsDir)
 	if os.IsNotExist(err) {
@@ -102,7 +103,11 @@ func List(chatsDir string) ([]SessionInfo, error) {
 
 			for _, msg := range messages {
 				if msg.Role == "user" {
-					s.Title = strings.Join(strings.Fields(msg.Content), " ")
+					title := msg.Content
+					if len(msg.Input) > 0 {
+						title = msg.Input.Label()
+					}
+					s.Title = strings.Join(strings.Fields(title), " ")
 
 					if s.Title == "" {
 						s.Title = "未命名会话"

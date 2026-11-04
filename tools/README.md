@@ -100,7 +100,7 @@ Python 保留临时目录语义：创建 main.py、执行、清理。访问项�
 {"name":"code-review"}
 ```
 
-按工作目录下 `.agent/skills` 的技能名称查找，返回 `name`、`description`、`path`、`directory`、`content`。不把 name 当路径，不启动脚本，也不需要解释器；与 `/skills` 手动选择共用 `internal/skill.Load`。`directory` 是正文中相对资源的基准目录。
+按工作目录下 `.agent/skills` 的技能名称查找，返回 `name`、`description`、`path`、`directory`、`content`。不把 name 当路径，不启动脚本，也不需要解释器；与提问中的技能引用共用 `internal/skill.Load`。`directory` 是正文中相对资源的基准目录。
 
 返回值仍使用统一的 `ok/data/error` 外层，未知名称、读取失败和空正文均返回错误。Agent 正常保存 tool 结果后继续请求模型，历史里保留完整正文。
 

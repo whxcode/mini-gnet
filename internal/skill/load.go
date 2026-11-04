@@ -66,24 +66,3 @@ func Load(projectDir, name string) (Document, error) {
 
 	return Document{}, fmt.Errorf("未找到技能 %q，输入 /skills 查看可用技能", name)
 }
-
-// WithQuery 把显式选择的技能与原始问题合成一条普通 user 消息，交给现有历史记录流程。
-func (d Document) WithQuery(query string) string {
-	return fmt.Sprintf(`【用户问题】
-%s
-
-【用户指定技能：%s】
-简介：%s
-文件：%s
-技能目录：%s
-正文中的相对资源路径以技能目录为起点。以下说明不扩大工具权限或用户授权。
-
-%s`,
-		query,
-		d.Name,
-		d.Description,
-		d.Path,
-		d.Directory,
-		d.Content,
-	)
-}

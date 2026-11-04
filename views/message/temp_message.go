@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 
 	"github.com/google/uuid"
 	"github.com/sashabaranov/go-openai"
 	imp "github.com/whxcode/mini-gnet/interface"
+	"github.com/whxcode/mini-gnet/internal/query"
 	"github.com/whxcode/mini-gnet/tools"
 )
 
@@ -21,8 +23,9 @@ type TempMessage struct {
 	usage     UsageSummary // 会话统计与聊天记录在同一把锁内更新。
 }
 
-// Record 保持原来的 JSONL 消息字段，额外保存响应标记和进程信息；请求模型时只取 SDK 消息。
+// Record 保持正常消息字段，额外保存原始输入、响应标记和进程信息；请求模型时只取 SDK 消息。
 type Record struct {
+	Input query.Input `json:"user_input,omitempty"` // 仅用于恢复简短提问，不发送给模型。
 	openai.ChatCompletionMessage
 	Response  *ResponseInfo        `json:"agent_response,omitempty"` // nil 表示旧格式，未记录结束原因。
 	Execution *tools.ExecutionInfo `json:"tool_execution,omitempty"` // 仅保存在本地，不进入模型上下文。
@@ -59,7 +62,11 @@ func (t *TempMessage) Records() []Record {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
 
-	return append([]Record(nil), t.chats...)
+	records := slices.Clone(t.chats)
+	for index := range records {
+		records[index].Input = slices.Clone(records[index].Input)
+	}
+	return records
 }
 
 // append 先编码、写文件并同步到磁盘，成功后才更新内存；哪一步失败就直接返回错误。
@@ -93,6 +100,17 @@ func (t *TempMessage) AppendSystemMessage(content string) error {
 			Role:    openai.ChatMessageRoleSystem,
 			Content: content,
 		},
+	})
+}
+
+// AppendInputMessage 保存组装后的普通 user 内容，同时保留原始片段供界面恢复。
+func (t *TempMessage) AppendInputMessage(content string, input query.Input) error {
+	return t.append(Record{
+		ChatCompletionMessage: openai.ChatCompletionMessage{
+			Role:    openai.ChatMessageRoleUser,
+			Content: content,
+		},
+		Input: slices.Clone(input),
 	})
 }
 

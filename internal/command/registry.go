@@ -33,8 +33,8 @@ type Command struct {
 	Handler     Handler // 执行操作并返回错误。
 }
 
-// builtinCommands 是内置命令的唯一注册位置，同时决定帮助菜单的显示顺序。
-func builtinCommands() []Command {
+// List 是内置命令的唯一注册位置，同时供命令查找、帮助和输入候选使用。
+func List() []Command {
 	return []Command{
 		{
 			Name:        HelpName,
@@ -54,7 +54,7 @@ func builtinCommands() []Command {
 		},
 		{
 			Name:        SkillsName,
-			Description: "为下一条提问选择技能；/skills <名称> 直选，--clear 取消待选",
+			Description: "查看技能；在问题中输入 /skills{名称} 引用",
 			MaxArgs:     1,
 			Handler:     handleSkills,
 		},
@@ -98,7 +98,7 @@ func builtinCommands() []Command {
 func Lookup(query string) (*Command, []string, error) {
 	text := strings.TrimSpace(query)
 
-	if !strings.HasPrefix(text, "/") || strings.ContainsAny(text, "\n\r") {
+	if strings.HasPrefix(text, "/skills{") || !strings.HasPrefix(text, "/") || strings.ContainsAny(text, "\n\r") {
 		return nil, nil, nil
 	}
 
@@ -106,7 +106,7 @@ func Lookup(query string) (*Command, []string, error) {
 	name := fields[0]
 	args := fields[1:]
 
-	for _, cmd := range builtinCommands() {
+	for _, cmd := range List() {
 		if cmd.Name != Name(name) {
 			continue
 		}
@@ -130,7 +130,7 @@ func Lookup(query string) (*Command, []string, error) {
 func HelpText() string {
 	var lines []string
 
-	for _, cmd := range builtinCommands() {
+	for _, cmd := range List() {
 		lines = append(lines, string(cmd.Name)+"  "+cmd.Description)
 	}
 

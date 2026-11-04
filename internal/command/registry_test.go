@@ -16,7 +16,7 @@ func TestLookupCommand(t *testing.T) {
 		{"/help", HelpName, "", false},
 		{"/skills", SkillsName, "", false},
 		{"/skills code-review", SkillsName, "code-review", false},
-		{"/skills --clear", SkillsName, "--clear", false},
+		{"/skills{code-review} 检查", "", "", false},
 		{"/skills one two", "", "", true},
 		{"/config", ConfigName, "", false},
 		{"/new", NewName, "", false},

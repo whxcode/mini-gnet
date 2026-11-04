@@ -8,6 +8,7 @@
 - `workspace.go`：新建、恢复、切换会话，首次打开时启动消费循环。
 - `pipe.go`：管道输入，入队后等待任务完成。
 - `terminal.go` / `session_grid.go`：输入编辑和栅格显示。
+- `completion.go`：按输入位置列出命令/技能候选，确认后只更新草稿。
 - `details.go`：Ctrl+O 完整执行记录与独立滚动，Esc 返回聊天。
 
 会话、模型循环和任务分别位于 `../session`、`../agent`、`../task`，本包不实现这些职责。

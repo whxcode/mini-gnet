@@ -13,12 +13,15 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/sashabaranov/go-openai"
 	"github.com/whxcode/mini-gnet/config"
+	"github.com/whxcode/mini-gnet/internal/query"
 	sessions "github.com/whxcode/mini-gnet/internal/session"
+	tasks "github.com/whxcode/mini-gnet/internal/task"
 	"github.com/whxcode/mini-gnet/views/message"
 )
 
@@ -50,7 +53,7 @@ func skillTestApp(t *testing.T, url string) *App {
 	return a
 }
 
-// TestManualSkillHistory 验证命令选择、会话隔离、失败保留，以及下一条问题和历史正文的正常持久化。
+// TestManualSkillHistory 验证行内引用、草稿隔离、任务副本和正常历史持久化。
 func TestManualSkillHistory(t *testing.T) {
 	requests := make(chan openai.ChatCompletionRequest, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -68,70 +71,57 @@ func TestManualSkillHistory(t *testing.T) {
 	a := skillTestApp(t, server.URL)
 	first := a.CurrentSession
 	before := first.History.ToChatCompletionMessage()
+	source := "请使用 /skills{code-review} 检查修改"
+	first.Draft.SetValue(source)
 
-	for _, command := range []string{"/skills code-review", "/new", "/ps 1"} {
+	for _, command := range []string{"/skills", "/new", "/ps 1"} {
 		if err := executeCommandForTest(t, a, command); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if first.Snapshot().SelectedSkill != "code-review" || a.opened[1].Snapshot().SelectedSkill != "" {
-		t.Fatal("待选技能没有隔离在所属会话")
+	if first.Draft.Value() != source || a.opened[1].Draft.Value() != "" {
+		t.Fatal("技能引用没有保存在所属会话草稿")
 	}
-	if err := executeCommandForTest(t, a, "/skills missing"); err == nil {
-		t.Fatal("未知技能应报错")
-	}
-	if _, err := first.Enqueue(context.Background(), "  "); err == nil {
-		t.Fatal("空问题应报错")
-	}
-	if first.Snapshot().SelectedSkill != "code-review" || !reflect.DeepEqual(before, first.History.ToChatCompletionMessage()) {
-		t.Fatal("选择或失败提交不应修改历史或丢失待选状态")
+	if !reflect.DeepEqual(before, first.History.ToChatCompletionMessage()) {
+		t.Fatal("编辑或查看技能目录不应写入历史")
 	}
 
-	// 待选提示增加一行后，窄窗口中的输入光标仍应落在编辑文本上。
 	model := newTerminal(a, context.Background())
 	model = updateTerminal(model, tea.WindowSizeMsg{Width: 40, Height: 24})
-	model.session.Draft.SetValue("编辑中")
 	view := model.View()
-	lines := strings.Split(ansi.Strip(view.Content), "\n")
-	if !strings.Contains(ansi.Strip(view.Content), "下一条使用技能") || len(lines) > 24 || view.Cursor == nil || view.Cursor.Position.Y >= len(lines) || !strings.Contains(lines[view.Cursor.Position.Y], "编辑中") {
-		t.Fatal("待选提示影响输入区布局")
+	plain := ansi.Strip(view.Content)
+	lines := strings.Split(plain, "\n")
+	if !strings.Contains(plain, "◆ code-review") || strings.Contains(ansi.Strip(first.Draft.View()), "/skills{") || len(lines) > 24 || view.Cursor == nil || view.Cursor.Position.Y >= len(lines) {
+		t.Fatalf("行内技能或光标布局错误：\n%s", plain)
 	}
 
-	if err := a.RunPipe(context.Background(), strings.NewReader("检查修改\n普通问题\n"), io.Discard); err != nil {
+	job, err := first.EnqueueInput(context.Background(), first.Draft.Segments())
+	if err != nil {
 		t.Fatal(err)
 	}
-	if first.Snapshot().SelectedSkill != "" || first.Snapshot().Status != "已完成" {
-		t.Fatal("提交后应清除待选且完成任务")
+	first.Draft.SetValue("提交后修改的草稿")
+	if err := waitTask(t, job); err != nil {
+		t.Fatal(err)
 	}
-
+	if err := a.RunPipe(context.Background(), strings.NewReader("普通问题\n"), io.Discard); err != nil {
+		t.Fatal(err)
+	}
 	initial := <-requests
 	firstQuestion := initial.Messages[len(initial.Messages)-1]
-	if firstQuestion.Role != "user" || !strings.Contains(firstQuestion.Content, "检查修改") || strings.Count(firstQuestion.Content, "技能正文验证标记") != 1 {
-		t.Fatal("手动技能没有作为普通 user 消息发送")
+	if firstQuestion.Role != "user" || !strings.Contains(firstQuestion.Content, "检查修改") || strings.Count(firstQuestion.Content, "技能正文验证标记") != 1 || strings.Contains(firstQuestion.Content, "提交后修改") {
+		t.Fatal("任务没有使用独立输入副本或未附加正文")
 	}
 	next := <-requests
-	if strings.TrimSpace(next.Messages[len(next.Messages)-1].Content) != "普通问题" {
-		t.Fatal("第二条提问仍然附加了待选技能")
-	}
-	if !strings.Contains(next.Messages[1].Content, "技能正文验证标记") {
-		t.Fatal("后续请求不应剥离历史技能正文")
-	}
-
-	for _, command := range []string{"/skills code-review", "/skills --clear"} {
-		if err := executeCommandForTest(t, a, command); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if first.Snapshot().SelectedSkill != "" {
-		t.Fatal("清除命令没有生效")
+	if strings.TrimSpace(next.Messages[len(next.Messages)-1].Content) != "普通问题" || !strings.Contains(next.Messages[1].Content, "技能正文验证标记") {
+		t.Fatal("后续提问不应重复附加技能，也不应删除历史正文")
 	}
 	assertSkillHistoryResumes(t, a)
 
 	if err := executeCommandForTest(t, a, "/new"); err != nil {
 		t.Fatal(err)
 	}
-	if len(a.CurrentSession.History.ToChatCompletionMessage()) != 1 || a.CurrentSession.Snapshot().SelectedSkill != "" {
-		t.Fatal("新会话仍携带旧提问或待选技能")
+	if len(a.CurrentSession.History.ToChatCompletionMessage()) != 1 || a.CurrentSession.Draft.Value() != "" {
+		t.Fatal("新会话仍携带旧问题或标签")
 	}
 }
 
@@ -207,5 +197,86 @@ func assertSkillHistoryResumes(t *testing.T, a *App) {
 	defer restored.Close()
 	if !reflect.DeepEqual(history.ToChatCompletionMessage(), restored.ToChatCompletionMessage()) {
 		t.Fatal("恢复会话后消息发生变化")
+	}
+}
+
+// TestQueuedSkillReadsAtExecution 验证排队不读取正文，执行开始读取一次，此后的工具轮次复用同一条 user 消息。
+func TestQueuedSkillReadsAtExecution(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	requests := make(chan openai.ChatCompletionRequest, 3)
+	var calls atomic.Int32
+	var skillPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request openai.ChatCompletionRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+			return
+		}
+		requests <- request
+		w.Header().Set("Content-Type", "text/event-stream")
+		switch calls.Add(1) {
+		case 1:
+			close(started)
+			select {
+			case <-release:
+			case <-r.Context().Done():
+				return
+			}
+		case 2:
+			// 这一轮已加载 B，下一轮不得在同任务中悄悄读取 C。
+			if err := os.WriteFile(skillPath, []byte("---\nname: code-review\ndescription: 审查\n---\n执行中修改为 C"), 0o600); err != nil {
+				t.Error(err)
+			}
+			fmt.Fprint(w, "data: "+`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"pwd-call","type":"function","function":{"name":"run_bash","arguments":"{\"command\":\"pwd\"}"}}]},"finish_reason":"tool_calls"}]}`+"\n\ndata: [DONE]\n\n")
+			return
+		}
+		fmt.Fprint(w, "data: "+`{"choices":[{"delta":{"content":"完成"},"finish_reason":"stop"}]}`+"\n\ndata: [DONE]\n\n")
+	}))
+	t.Cleanup(server.Close)
+	a := skillTestApp(t, server.URL)
+	skillPath = filepath.Join(a.config.Current().ProjectDir, ".agent", "skills", "review", "SKILL.md")
+	first, err := a.CurrentSession.Enqueue(context.Background(), "占位任务")
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("占位任务未启动")
+	}
+	parts, err := query.Parse("使用 /skills{code-review} 检查")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := a.CurrentSession.EnqueueInput(context.Background(), parts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts[1].Value = "提交后被编辑器修改的名称"
+	if err := os.WriteFile(skillPath, []byte("---\nname: code-review\ndescription: 审查\n---\n排队期间更新为 B"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	for _, job := range []*tasks.Task{first, second} {
+		if err := waitTask(t, job); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if calls.Load() != 3 {
+		t.Fatal("工具循环没有继续执行")
+	}
+	<-requests
+	for range 2 {
+		request := <-requests
+		found := false
+		for _, msg := range request.Messages {
+			if msg.Role == "user" && strings.Contains(msg.Content, "【用户指定技能") {
+				found = strings.Contains(msg.Content, "排队期间更新为 B") && !strings.Contains(msg.Content, "修改为 C")
+			}
+		}
+		if !found {
+			t.Fatal("技能加载时机错误，或任务输入不是独立副本")
+		}
 	}
 }

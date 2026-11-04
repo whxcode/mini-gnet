@@ -18,18 +18,22 @@ type refreshMsg struct{}
 
 // terminalModel 只编辑当前会话并刷新快照。提交后把输入交回 App.Run，命令 handler 仍直接执行。
 type terminalModel struct {
-	app          *App
-	session      *sessions.Session
-	ctx          context.Context
-	width        int
-	height       int
-	query        string
-	fromEditor   bool
-	done         bool
-	err          error
-	lastLines    int  // 上次排版的正文行数，用于在流式输出增加时保持阅读位置。
-	details      bool // Ctrl+O 打开的完整记录视图，不改变会话或启动新任务。
-	detailOffset int  // 详情独立滚动，Esc 返回时保留聊天原位置。
+	completions      []completionItem
+	completionPrefix string
+	completionIndex  int
+	completionError  string
+	app              *App
+	session          *sessions.Session
+	ctx              context.Context
+	width            int
+	height           int
+	query            string
+	fromEditor       bool
+	done             bool
+	err              error
+	lastLines        int  // 上次排版的正文行数，用于在流式输出增加时保持阅读位置。
+	details          bool // Ctrl+O 打开的完整记录视图，不改变会话或启动新任务。
+	detailOffset     int  // 详情独立滚动，Esc 返回时保留聊天原位置。
 }
 
 // 背景保持连续，输入框略亮；颜色强调标题，正文和操作提示降低视觉噪声。
@@ -141,6 +145,9 @@ func (m terminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
+		if !m.details && m.completionKey(msg) {
+			return m, nil
+		}
 		switch msg.String() {
 		case "ctrl+o":
 			m.details = !m.details
@@ -212,6 +219,7 @@ func (m terminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	var cmd tea.Cmd
 	m.session.Draft, cmd = m.session.Draft.Update(msg)
+	m.refreshCompletions()
 
 	return m, cmd
 }
@@ -322,7 +330,16 @@ func (m terminalModel) render() (tea.View, conversation.Transcript) {
 	header += "\n" + workspaceMuted.Render(displayLine(tokenDetailText(snapshot.Usage), width))
 
 	// 输入框的边框、左右内边距各占两列。textarea 的宽度在 WindowSizeMsg 中同步调整。
-	composer := composerPanel.Width(width - 2).Render(m.session.Draft.View())
+	draft := m.session.Draft
+	candidates := m.completionView(max(1, width-4))
+	if candidates != "" {
+		draft.MaxHeight = max(1, m.height-18-lipgloss.Height(candidates))
+	}
+	composerContent := draft.View()
+	if candidates != "" {
+		composerContent += "\n\n" + candidates
+	}
+	composer := composerPanel.Width(width - 2).Render(composerContent)
 	help := "Enter 发送   Ctrl+J 换行   Ctrl+O 详情   F2 会话   /help"
 
 	if width < 60 {
@@ -331,11 +348,6 @@ func (m terminalModel) render() (tea.View, conversation.Transcript) {
 
 	footer := workspaceMuted.Render(displayLine(help, width))
 	var statusLines []string
-
-	if snapshot.SelectedSkill != "" {
-		text := "下一条使用技能：" + snapshot.SelectedSkill + " · /skills --clear 取消"
-		statusLines = append(statusLines, workspaceNotice.Render(displayLine(text, width)))
-	}
 
 	if snapshot.Running && snapshot.ProgressText != "" {
 		statusLines = append(statusLines, workspaceMuted.Render(displayLine("◌ "+snapshot.ProgressText, width)))
@@ -396,7 +408,7 @@ func (m terminalModel) render() (tea.View, conversation.Transcript) {
 	view.MouseMode = tea.MouseModeCellMotion
 
 	// 中文输入法使用真实光标；偏移跟随区块实际行数，不依赖固定的屏幕底部坐标。
-	view.Cursor = m.session.Draft.Cursor()
+	view.Cursor = draft.Cursor()
 
 	if view.Cursor != nil {
 		view.Cursor.Position.X += 4                                       // 外层左留白 2 + 输入框边框 1 + 内边距 1。

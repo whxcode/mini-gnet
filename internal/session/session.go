@@ -10,9 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"charm.land/bubbles/v2/textarea"
 	"github.com/whxcode/mini-gnet/internal/agent"
-	"github.com/whxcode/mini-gnet/internal/skill"
+	"github.com/whxcode/mini-gnet/internal/query"
 	tasks "github.com/whxcode/mini-gnet/internal/task"
 	"github.com/whxcode/mini-gnet/views/conversation"
 	"github.com/whxcode/mini-gnet/views/input"
@@ -27,7 +26,7 @@ type Session struct {
 	History *message.TempMessage // 模型上下文及其 JSONL 文件句柄，负责聊天记录的持久化。
 
 	// 输入框只由界面操作，后台任务不修改用户正在编辑的文字。
-	Draft        textarea.Model // 未发送的输入，切换会话时保留文字和光标。
+	Draft        input.Composer // 未发送的输入，切换会话时保留文字和光标。
 	ScrollOffset int            // 向上查看历史的行数；0 表示查看最新消息。
 
 	// 以下字段会被后台任务写入、界面读取，读写时都要持有 mu。
@@ -41,7 +40,6 @@ type Session struct {
 	title           string           // 会话列表中的标题，默认取第一条用户提问。
 	hasUnreadResult bool             // 本轮已有结果但还没查看，用于后台完成提醒。
 	updatedAt       time.Time        // 最近一次状态或文字更新的时间，用于会话列表。
-	selectedSkill   *skill.Document  // 只为下一次提问准备，成功入队后清除；已写入历史的正文不受影响。
 }
 
 // New 根据聊天记录创建一个窗口；加载历史只恢复显示，不执行历史任务。
@@ -51,7 +49,7 @@ func New(history *message.TempMessage, runner *agent.Agent) *Session {
 		History:    history,
 		taskQueue:  make(chan *tasks.Task, 16),
 		workerDone: make(chan struct{}),
-		Draft:      input.NewTextArea(),
+		Draft:      input.NewComposer(),
 		status:     "空闲",
 		title:      "新会话",
 		updatedAt:  time.Now(),
@@ -68,10 +66,19 @@ func New(history *message.TempMessage, runner *agent.Agent) *Session {
 	return session
 }
 
-// Enqueue 向本会话提交提问，只校验并入队；共享配置和工具由 Agent 在执行时读取。
-func (s *Session) Enqueue(parent context.Context, query string) (*tasks.Task, error) {
-	if strings.TrimSpace(query) == "" {
-		return nil, fmt.Errorf("问题不能为空")
+// Enqueue 是管道等纯文本入口：解析显式引用后，交给结构化入队方法。
+func (s *Session) Enqueue(parent context.Context, text string) (*tasks.Task, error) {
+	input, err := query.Parse(text)
+	if err != nil {
+		return nil, err
+	}
+	return s.EnqueueInput(parent, input)
+}
+
+// EnqueueInput 校验并复制输入，只提交任务；引用内容由 Agent 在开始执行时读取。
+func (s *Session) EnqueueInput(parent context.Context, input query.Input) (*tasks.Task, error) {
+	if err := input.Validate(); err != nil {
+		return nil, err
 	}
 
 	if err := parent.Err(); err != nil {
@@ -89,22 +96,16 @@ func (s *Session) Enqueue(parent context.Context, query string) (*tasks.Task, er
 		return nil, fmt.Errorf("当前会话的等待队列已满（%d 项），请稍后再发送", cap(s.taskQueue))
 	}
 
-	// 手动选择时直接合成普通提问，后续执行和持久化继续走原来的流程。
-	prompt := query
-	if s.selectedSkill != nil {
-		prompt = s.selectedSkill.WithQuery(query)
-	}
-	job := tasks.New(parent, prompt)
+	job := tasks.NewInput(parent, input)
 
 	// 使用非阻塞发送：队列满时保留输入，不能让主循环卡在这里。
 	select {
 	case s.taskQueue <- job:
 		s.pending = append(s.pending, job)
 		s.updatedAt = time.Now()
-		s.selectedSkill = nil
 
 		if s.title == "新会话" {
-			s.title = strings.Join(strings.Fields(query), " ")
+			s.title = strings.Join(strings.Fields(input.Label()), " ")
 		}
 
 		return job, nil

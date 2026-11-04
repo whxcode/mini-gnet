@@ -44,10 +44,14 @@ func historyEvents(session *message.TempMessage) []conversation.Event {
 
 		switch msg.Role {
 		case "user":
+			text := msg.Content
+			if len(msg.Input) > 0 {
+				text = msg.Input.Label()
+			}
 			events = append(events, conversation.Event{
 				Role: conversation.User,
 				Name: conversation.Username(),
-				Text: msg.Content,
+				Text: text,
 			})
 
 		case "assistant":

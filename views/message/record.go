@@ -3,6 +3,7 @@ package message
 import (
 	"encoding/json"
 
+	"github.com/whxcode/mini-gnet/internal/query"
 	"github.com/whxcode/mini-gnet/tools"
 )
 
@@ -10,7 +11,7 @@ import (
 // 必须显式实现：嵌入的 SDK 消息自带 MarshalJSON，否则会忽略本地元数据字段。
 func (r Record) MarshalJSON() ([]byte, error) {
 	data, err := json.Marshal(r.ChatCompletionMessage)
-	if err != nil || (r.Response == nil && r.Execution == nil) {
+	if err != nil || (r.Response == nil && r.Execution == nil && len(r.Input) == 0) {
 		return data, err
 	}
 
@@ -38,6 +39,15 @@ func (r Record) MarshalJSON() ([]byte, error) {
 		fields["tool_execution"] = metadata
 	}
 
+	if len(r.Input) > 0 {
+		metadata, err := json.Marshal(r.Input)
+		if err != nil {
+			return nil, err
+		}
+
+		fields["user_input"] = metadata
+	}
+
 	return json.Marshal(fields)
 }
 
@@ -48,6 +58,7 @@ func (r *Record) UnmarshalJSON(data []byte) error {
 	}
 
 	var metadata struct {
+		Input     query.Input          `json:"user_input"`
 		Response  *ResponseInfo        `json:"agent_response"`
 		Execution *tools.ExecutionInfo `json:"tool_execution"`
 	}
@@ -58,6 +69,7 @@ func (r *Record) UnmarshalJSON(data []byte) error {
 
 	r.Response = metadata.Response
 	r.Execution = metadata.Execution
+	r.Input = metadata.Input
 
 	return nil
 }

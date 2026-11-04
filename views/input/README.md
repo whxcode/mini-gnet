@@ -1,6 +1,6 @@
 # 终端输入组件
 
-交互终端由 `internal/app/terminal.go` 管理工作区，每个会话使用 `NewTextArea()` 创建自己的输入框，任务执行期间仍可输入和切换。
+交互终端由 `internal/app/terminal.go` 管理工作区，每个会话使用 `NewComposer()` 创建自己的输入框，任务执行期间仍可输入和切换。
 管道输入由 `internal/app/pipe.go` 单独按行读取；本目录只负责终端文本编辑，不判断运行模式。
 
 输入区初始只有一行。`DynamicHeight` 会按实际显示行数自动撑开，包含手动换行和
@@ -43,10 +43,20 @@ Settings → Profiles → Keys → Key Mappings 中添加：
 
 ## 阅读代码顺序
 
-1. `NewTextArea`：创建输入框、设置尺寸和换行快捷键。
+1. `NewComposer`：组合 Bubbles 文字编辑、引用映射和标签布局；`NewTextArea` 设置基础快捷键。
 2. `internal/app/terminal.go`：会话工作区的提交、切换和显示逻辑。
 3. `Update`：先处理发送与退出，再把普通编辑事件交给 textarea。
 4. `View`：显示正文、光标和快捷键提示。
 5. `internal/app/app.go`：取得输入后分流命令和任务。
 
-当前仅处理文本，未加入图片、文件补全或 skills 菜单。
+## 行内技能标签
+
+输入“请使用 /”可选择技能，也可直接输入 `/skills{code-review}`。完整引用显示成带颜色的 `◆ code-review` 标签；左右键跨过整个标签，Backspace/Delete 整体删除。普通文字仍由 Bubbles textarea 编辑。
+
+候选打开时，↑↓ 或 Tab 选择，Enter 只确认候选，Esc 关闭；关闭后 Enter 才发送消息。句首候选包含本地命令，正文中只包含技能，文件路径和 URL 不触发候选。
+
+`Composer.Segments()` 返回独立的 `kind/value` 片段；`Submission()` 额外检查未完成的手输语法。内部字符仅用于让 Bubbles 把标签当成一个整体，显示、剪贴板和提交都会转换成真实内容。
+
+`composer_layout.go` 统一计算标签折行和真实光标位置，避免显示宽度与光标不一致。任务开始时读取技能正文，流程见 `internal/query/README.md`。
+
+当前未加入图片、文件或工具引用。
