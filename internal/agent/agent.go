@@ -182,11 +182,13 @@ func (a *Agent) Run(job *task.Task, history *message.TempMessage, display *Outpu
 				Name: call.Function.Name,
 				Text: "正在执行 · Ctrl+C 停止",
 			})
-			display.Update(Event{
+			callEvent := Event{
 				Role: Tool,
 				Name: call.Function.Name + " · 调用",
-				Text: tools.InputText(call.Function.Arguments),
-			})
+				Text: tools.CallText(call.Function.Name, call.ID, call.Function.Arguments),
+			}
+			callIndex := display.Update(callEvent)
+
 			result := tools.Result{
 				Error: &tools.ToolError{
 					Code:    tools.ExecutionFailed,
@@ -201,6 +203,10 @@ func (a *Agent) Run(job *task.Task, history *message.TempMessage, display *Outpu
 				})
 			}
 
+			// 进程结束后补入实际命令；临时 Python 路径必须来自真正创建的目录。
+			callEvent.Text += tools.ExecutionText(result.Execution)
+			display.ReplaceMessage(callIndex, callEvent)
+
 			encoded, err := json.Marshal(result)
 			if err != nil {
 				return fmt.Errorf("编码工具结果：%w", err)
@@ -208,14 +214,14 @@ func (a *Agent) Run(job *task.Task, history *message.TempMessage, display *Outpu
 
 			output := string(encoded)
 
-			if err := history.AppendTool(call.ID, output); err != nil {
+			if err := history.AppendToolExecution(call.ID, output, result.Execution); err != nil {
 				return err
 			}
 
 			display.Update(Event{
 				Role: Tool,
 				Name: call.Function.Name + " · 结果",
-				Text: tools.OutputText(output),
+				Text: tools.ResultText(call.ID, output),
 			})
 
 			if !result.OK {

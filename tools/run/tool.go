@@ -56,5 +56,8 @@ func (t *Tool) Execute(ctx context.Context, request tools.Request) (tools.Result
 
 	output, err := PythonCode(ctx, args.Code)
 
-	return tools.Result{Data: output}, err
+	return tools.Result{
+		Data:      output,
+		Execution: output.Execution,
+	}, err
 }

@@ -100,9 +100,13 @@ func TestConfigSaveAndValidation(t *testing.T) {
 	}
 
 	m.fields[1].SetValue("new-model")
+	m.fields[5].SetValue(t.TempDir())
 	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	if got := next.(configModel); !got.done || got.saved == nil || got.saved.Model != "new-model" {
+	if got := next.(configModel); !got.done ||
+		got.saved == nil ||
+		got.saved.Model != "new-model" ||
+		got.saved.ToolsDir != m.fields[5].Value() {
 		t.Fatal("未返回已确认的配置")
 	}
 }

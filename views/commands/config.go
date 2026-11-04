@@ -14,6 +14,7 @@ var fieldLabels = []string{
 	"API Key（隐藏显示）",
 	"聊天记录目录",
 	"工作目录（留空使用启动目录）",
+	"工具目录（默认 my_tools，修改后重启生效）",
 }
 
 type configModel struct {
@@ -26,7 +27,14 @@ type configModel struct {
 }
 
 func newConfig(cfg config.Config) configModel {
-	values := []string{cfg.BaseURL, cfg.Model, cfg.APIKey, cfg.ChatsDir, cfg.ProjectDir}
+	values := []string{
+		cfg.BaseURL,
+		cfg.Model,
+		cfg.APIKey,
+		cfg.ChatsDir,
+		cfg.ProjectDir,
+		cfg.ToolsDir,
+	}
 	m := configModel{width: 78}
 
 	for i, value := range values {
@@ -78,6 +86,7 @@ func (m configModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					APIKey:     m.fields[2].Value(),
 					ChatsDir:   m.fields[3].Value(),
 					ProjectDir: m.fields[4].Value(),
+					ToolsDir:   m.fields[5].Value(),
 				})
 				if err != nil {
 					m.err = err.Error()

@@ -30,6 +30,7 @@ func historyEvents(session *message.TempMessage) []conversation.Event {
 	history := session.Records()
 	events := []conversation.Event{}
 	toolNames := make(map[string]string)
+	callIndexes := make(map[string]int)
 
 	for _, msg := range history {
 		for _, call := range msg.ToolCalls {
@@ -64,19 +65,24 @@ func historyEvents(session *message.TempMessage) []conversation.Event {
 			}
 
 			for _, call := range msg.ToolCalls {
+				callIndexes[call.ID] = len(events)
 				events = append(events, conversation.Event{
 					Role: conversation.Tool,
 					Name: call.Function.Name + " · 调用",
-					Text: tools.InputText(call.Function.Arguments),
+					Text: tools.CallText(call.Function.Name, call.ID, call.Function.Arguments),
 				})
 			}
 
 		case "tool":
+			if index, exists := callIndexes[msg.ToolCallID]; exists {
+				events[index].Text += tools.ExecutionText(msg.Execution)
+			}
+
 			name := toolNames[msg.ToolCallID]
 			events = append(events, conversation.Event{
 				Role: conversation.Tool,
 				Name: name + " · 结果",
-				Text: tools.OutputText(msg.Content),
+				Text: tools.ResultText(msg.ToolCallID, msg.Content),
 			})
 		}
 	}

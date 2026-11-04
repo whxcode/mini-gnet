@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/sashabaranov/go-openai"
 	imp "github.com/whxcode/mini-gnet/interface"
+	"github.com/whxcode/mini-gnet/tools"
 )
 
 // TempMessage 将会话消息同时保存到 JSONL 文件和模型使用的内存上下文。
@@ -19,10 +20,11 @@ type TempMessage struct {
 	chats     []Record   // 已成功保存的消息及本地显示标记。
 }
 
-// Record 保持原来的 JSONL 消息字段，仅额外保存本地响应信息；请求模型时不发送这些信息。
+// Record 保持原来的 JSONL 消息字段，额外保存响应标记和进程信息；请求模型时只取 SDK 消息。
 type Record struct {
 	openai.ChatCompletionMessage
-	Response *ResponseInfo `json:"agent_response,omitempty"` // nil 表示旧格式，未记录结束原因。
+	Response  *ResponseInfo        `json:"agent_response,omitempty"` // nil 表示旧格式，未记录结束原因。
+	Execution *tools.ExecutionInfo `json:"tool_execution,omitempty"` // 仅保存在本地，不进入模型上下文。
 }
 
 // ResponseInfo 记录模型本轮的结束原因和是否为本项最终回答。
@@ -134,12 +136,18 @@ func (t *TempMessage) AppendResponse(
 
 // AppendTool 保存工具结果及其调用编号，并直接返回保存错误。
 func (t *TempMessage) AppendTool(toolCallID, content string) error {
+	return t.AppendToolExecution(toolCallID, content, nil)
+}
+
+// AppendToolExecution 保存工具结果和当时的执行信息，恢复会话时不重新读取工具配置。
+func (t *TempMessage) AppendToolExecution(toolCallID, content string, execution *tools.ExecutionInfo) error {
 	return t.append(Record{
 		ChatCompletionMessage: openai.ChatCompletionMessage{
 			Role:       openai.ChatMessageRoleTool,
 			ToolCallID: toolCallID,
 			Content:    content,
 		},
+		Execution: execution,
 	})
 }
 

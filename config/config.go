@@ -7,6 +7,7 @@ type Config struct {
 	Model      string `json:"model"`
 	ChatsDir   string `json:"chatsDir"`
 	ProjectDir string `json:"projectDir"`
+	ToolsDir   string `json:"toolsDir"` // 外部工具目录；相对路径以项目目录为起点。
 }
 
 /*
@@ -22,6 +23,7 @@ var defautConfig Config = Config{
 	APIKey:   "",
 	Model:    "qwen3:8b",
 	ChatsDir: "/Users/mac/study/mini-gnet/chat_history",
+	ToolsDir: "my_tools",
 }
 
 // LoadConfig 保留原调用方式；新代码使用 Load 获取明确的错误信息。

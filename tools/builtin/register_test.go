@@ -88,6 +88,14 @@ func TestBuiltinsOutsideRepository(t *testing.T) {
 			t.Fatalf("执行失败：%+v", result)
 		}
 
+		if result.Execution == nil ||
+			!result.Execution.Started ||
+			len(result.Execution.Argv) != 3 ||
+			result.Execution.Argv[1] != "-c" ||
+			result.Execution.Argv[2] != tc.args["command"] {
+			t.Fatalf("没有记录真实 Bash 命令：%+v", result.Execution)
+		}
+
 		got := strings.TrimSpace(output.Stdout)
 		want := tc.want
 
@@ -190,6 +198,15 @@ func TestPythonTool(t *testing.T) {
 		output, ok := result.Data.(tools.ProcessOutput)
 		if !ok {
 			t.Fatalf("缺少 Python 输出：%+v", result)
+		}
+
+		if result.Execution == nil ||
+			!result.Execution.Started ||
+			!filepath.IsAbs(result.Execution.Executable) ||
+			len(result.Execution.Argv) != 2 ||
+			result.Execution.Argv[1] != "main.py" ||
+			!strings.Contains(result.Execution.Cwd, "mini-agent-python-") {
+			t.Fatalf("没有记录 Python 的实际临时目录或参数：%+v", result.Execution)
 		}
 
 		if strings.Contains(code, "raise") {

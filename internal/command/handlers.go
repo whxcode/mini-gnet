@@ -69,6 +69,10 @@ func handleConfig(a Application, _ []string) error {
 	path, _ := config.Path()
 	text := "配置已保存并应用：" + path + "\n模型：" + next.Model
 
+	if next.ToolsDir != current.ToolsDir {
+		text += "\n工具目录已保存，重启程序后加载：" + next.ToolsDir
+	}
+
 	if replacement != nil {
 		text += "\n目录已改变，已开启新会话：" + replacement.SessionID
 	}

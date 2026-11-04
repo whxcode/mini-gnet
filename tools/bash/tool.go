@@ -66,7 +66,10 @@ func (t *Tool) Execute(ctx context.Context, request tools.Request) (tools.Result
 
 	output, err := runCommand(ctx, cwd, args.Command)
 
-	return tools.Result{Data: output}, err
+	return tools.Result{
+		Data:      output,
+		Execution: output.Execution,
+	}, err
 }
 
 // resolveDirectory 只决定相对路径的起点，允许上层目录及其他绝对路径。

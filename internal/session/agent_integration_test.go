@@ -363,6 +363,31 @@ func TestMultipleRoundsHaveOneFinal(t *testing.T) {
 		t.Fatalf("分层错误：user=%d process=%d final=%d", users, process, finals)
 	}
 
+	var liveTools []string
+	for _, event := range s.Snapshot().Messages {
+		if event.Role == agent.Tool {
+			liveTools = append(liveTools, event.Text)
+		}
+	}
+
+	if len(liveTools) != 4 {
+		t.Fatalf("两轮工具调用应保留各自的调用与结果：%v", liveTools)
+	}
+
+	for _, index := range []int{0, 2} {
+		if !strings.Contains(liveTools[index], `{"command":"pwd"}`) ||
+			!strings.Contains(liveTools[index], "tool_call_id: pwd-call") ||
+			!strings.Contains(liveTools[index], "argv") ||
+			!strings.Contains(liveTools[index], "cwd:") {
+			t.Fatalf("调用详情不完整：%s", liveTools[index])
+		}
+	}
+
+	modelContext, err := json.Marshal(c.requestHistory())
+	if err != nil || strings.Contains(string(modelContext), "tool_execution") {
+		t.Fatal("本地执行信息不应发送给模型", err)
+	}
+
 	path := s.History.Path()
 	id := s.History.SessionID
 	s.Shutdown()
@@ -384,6 +409,17 @@ func TestMultipleRoundsHaveOneFinal(t *testing.T) {
 
 	if got[1].Stage != agent.Process || got[len(got)-1].Stage != agent.Final {
 		t.Fatal("恢复后丢失中间轮次或最终回答标记")
+	}
+
+	var restoredTools []string
+	for _, event := range got {
+		if event.Role == agent.Tool {
+			restoredTools = append(restoredTools, event.Text)
+		}
+	}
+
+	if strings.Join(liveTools, "\n") != strings.Join(restoredTools, "\n") {
+		t.Fatal("恢复后调用详情与运行时不同，或重复调用 ID 覆盖了上一轮记录")
 	}
 }
 

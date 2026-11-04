@@ -15,6 +15,7 @@ func TestSaveLoadAndInvalidConfig(t *testing.T) {
 		Model:      "old",
 		ChatsDir:   dir,
 		ProjectDir: dir,
+		ToolsDir:   filepath.Join(dir, "my_tools"),
 	}
 	got, err := loadFile(path, defaults)
 	if err != nil || got.Model != "old" {

@@ -6,21 +6,48 @@ import (
 	"strings"
 )
 
-// InputText 展示模型参数：单个字符串展开为正文，多个参数保留 JSON，避免漏掉 cwd。
+// InputText 原样保留模型参数，包括字段名、空格、换行和转义序列。
 func InputText(arguments string) string {
-	var fields map[string]json.RawMessage
+	return arguments
+}
 
-	if json.Unmarshal([]byte(arguments), &fields) == nil && len(fields) == 1 {
-		for _, value := range fields {
-			var text string
+// CallText 将调用身份和原始参数分开显示，不把单字段参数简化为一个值。
+func CallText(name, callID, arguments string) string {
+	return "tool_name: " + name +
+		"\ntool_call_id: " + callID +
+		"\n\narguments（原始 JSON）:\n" + InputText(arguments)
+}
 
-			if json.Unmarshal(value, &text) == nil {
-				return text
-			}
-		}
+// ExecutionText 展示真实命令数组和 argv，避免拼成 Shell 字符串后丢失参数边界。
+func ExecutionText(execution *ExecutionInfo) string {
+	if execution == nil {
+		return ""
 	}
 
-	return prettyJSON(arguments)
+	command := []string{execution.Executable}
+	if len(execution.Argv) > 1 {
+		command = append(command, execution.Argv[1:]...)
+	}
+
+	commandJSON, _ := json.Marshal(command)
+	argvJSON, _ := json.MarshalIndent(execution.Argv, "", "  ")
+	text := "\n\n执行信息:\ncommand（程序 + 参数）: " + string(commandJSON)
+	text += "\nargv（完整原始参数数组）:\n" + string(argvJSON)
+	text += "\ncwd: " + execution.Cwd
+	text += fmt.Sprintf("\nstarted: %t", execution.Started)
+
+	if execution.ExitCode != nil {
+		text += fmt.Sprintf("\nexit_code: %d", *execution.ExitCode)
+	}
+
+	text += fmt.Sprintf("\nduration_ms: %d", execution.DurationMS)
+
+	return text
+}
+
+// ResultText 在结果中重复调用编号，方便多个工具或重试时对应具体调用。
+func ResultText(callID, output string) string {
+	return "tool_call_id: " + callID + "\n\n" + OutputText(output)
 }
 
 // OutputText 展示统一结果，并兼容旧记录里的纯文本和裸进程结果；不按工具名称分支。

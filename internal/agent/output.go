@@ -30,8 +30,8 @@ func NewOutput(messages []Event) *Output {
 	}
 }
 
-// Update 直接记录一个输出事件，网络线程不操作终端。
-func (o *Output) Update(event Event) {
+// Update 直接记录事件；完整消息返回位置，供工具结束后补充该条调用的执行信息。
+func (o *Output) Update(event Event) int {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 
@@ -47,12 +47,29 @@ func (o *Output) Update(event Event) {
 			o.state.StreamText = ""
 
 			if event.Stage == Process && strings.TrimSpace(event.Text) == "" {
-				return // 工具轮次可能没有正文，清空预览即可，不创建空白消息。
+				return -1 // 工具轮次可能没有正文，清空预览即可，不创建空白消息。
 			}
 		}
 
 		o.state.Messages = append(o.state.Messages, event)
+
+		return len(o.state.Messages) - 1
 	}
+
+	return -1
+}
+
+// ReplaceMessage 更新已有消息，保留位置；调用编号重复时也不会覆盖其他轮次。
+func (o *Output) ReplaceMessage(index int, event Event) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	if index < 0 || index >= len(o.state.Messages) {
+		return
+	}
+
+	o.state.Messages[index] = event
+	o.state.UpdatedAt = time.Now()
 }
 
 // Snapshot 复制输出，调用者可以在解锁后进行排版。

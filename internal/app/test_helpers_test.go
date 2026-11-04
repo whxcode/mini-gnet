@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// newTestApp 与正式入口使用同一注册过程，不依赖测试进程的工作目录。
+// newTestApp 使用内置工具创建测试应用；外部目录加载由专门的集成测试覆盖。
 func newTestApp(t *testing.T, cfg config.Config) *App {
 	t.Helper()
 	registry, err := builtin.NewRegistry()

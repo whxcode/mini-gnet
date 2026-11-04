@@ -143,14 +143,27 @@ func (r *Registry) Execute(parent context.Context, name string, request Request)
 	if result.Data != nil {
 		data, err := json.Marshal(result.Data)
 		if err != nil {
-			return failure(InvalidOutput, err)
+			result.Data = nil
+
+			return executionFailure(result, &ToolError{
+				Code:    InvalidOutput,
+				Message: err.Error(),
+			})
 		}
 
 		if err := item.output.validateJSON(data); err != nil {
-			return failure(InvalidOutput, err)
+			result.Data = nil
+
+			return executionFailure(result, &ToolError{
+				Code:    InvalidOutput,
+				Message: err.Error(),
+			})
 		}
 	} else if runErr == nil {
-		return failure(InvalidOutput, fmt.Errorf("工具成功时必须返回符合 output_schema 的 data"))
+		return executionFailure(result, &ToolError{
+			Code:    InvalidOutput,
+			Message: "工具成功时必须返回符合 output_schema 的 data",
+		})
 	}
 
 	if runErr != nil {

@@ -14,6 +14,7 @@ import (
 	sessions "github.com/whxcode/mini-gnet/internal/session"
 	"github.com/whxcode/mini-gnet/tools"
 	"github.com/whxcode/mini-gnet/tools/builtin"
+	"github.com/whxcode/mini-gnet/tools/external"
 )
 
 // App 持有应用唯一的运行配置，并管理会话列表和输入循环。
@@ -52,7 +53,18 @@ func New() (*App, error) {
 		}
 	}
 
-	registry, err := builtin.NewRegistry()
+	implementations, err := builtin.Load()
+	if err != nil {
+		return nil, err
+	}
+
+	externalTools, err := external.LoadDir(cfg.ToolsDir)
+	if err != nil {
+		return nil, err
+	}
+
+	implementations = append(implementations, externalTools...)
+	registry, err := tools.NewRegistry(implementations...)
 	if err != nil {
 		return nil, err
 	}

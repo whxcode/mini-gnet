@@ -1,12 +1,16 @@
 package message
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/whxcode/mini-gnet/tools"
+)
 
 // MarshalJSON 保留 SDK 对消息正文的编码，再附加本地标记。
-// 必须显式实现：嵌入的 ChatCompletionMessage 自带 MarshalJSON，否则会忽略 Response 字段。
+// 必须显式实现：嵌入的 SDK 消息自带 MarshalJSON，否则会忽略本地元数据字段。
 func (r Record) MarshalJSON() ([]byte, error) {
 	data, err := json.Marshal(r.ChatCompletionMessage)
-	if err != nil || r.Response == nil {
+	if err != nil || (r.Response == nil && r.Execution == nil) {
 		return data, err
 	}
 
@@ -16,12 +20,23 @@ func (r Record) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 
-	metadata, err := json.Marshal(r.Response)
-	if err != nil {
-		return nil, err
+	if r.Response != nil {
+		metadata, err := json.Marshal(r.Response)
+		if err != nil {
+			return nil, err
+		}
+
+		fields["agent_response"] = metadata
 	}
 
-	fields["agent_response"] = metadata
+	if r.Execution != nil {
+		metadata, err := json.Marshal(r.Execution)
+		if err != nil {
+			return nil, err
+		}
+
+		fields["tool_execution"] = metadata
+	}
 
 	return json.Marshal(fields)
 }
@@ -33,7 +48,8 @@ func (r *Record) UnmarshalJSON(data []byte) error {
 	}
 
 	var metadata struct {
-		Response *ResponseInfo `json:"agent_response"`
+		Response  *ResponseInfo        `json:"agent_response"`
+		Execution *tools.ExecutionInfo `json:"tool_execution"`
 	}
 
 	if err := json.Unmarshal(data, &metadata); err != nil {
@@ -41,6 +57,7 @@ func (r *Record) UnmarshalJSON(data []byte) error {
 	}
 
 	r.Response = metadata.Response
+	r.Execution = metadata.Execution
 
 	return nil
 }

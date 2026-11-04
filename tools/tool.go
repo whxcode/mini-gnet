@@ -45,6 +45,8 @@ type Result struct {
 	OK    bool       `json:"ok"`
 	Data  any        `json:"data"`
 	Error *ToolError `json:"error"`
+
+	Execution *ExecutionInfo `json:"-"` // 本地执行信息单独保存，不改变工具输出 schema。
 }
 
 // ToolError 用稳定代码供程序判断，用文字说明供模型和用户阅读。
@@ -73,4 +75,6 @@ type ProcessOutput struct {
 	Stdout   string `json:"stdout"`
 	Stderr   string `json:"stderr"`
 	ExitCode int    `json:"exit_code"`
+
+	Execution *ExecutionInfo `json:"-"`
 }

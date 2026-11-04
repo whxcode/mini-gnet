@@ -45,7 +45,8 @@ func runCommand(ctx context.Context, projectDir, command string) (tools.ProcessO
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	err := cmd.Run()
+	execution, err := tools.RunProcess(cmd)
+	result.Execution = execution
 	result.Stdout = stdout.String()
 	result.Stderr = stderr.String()
 

@@ -89,6 +89,24 @@ func Normalize(cfg Config) (Config, error) {
 		}
 	}
 
+	toolDirectory := strings.TrimSpace(cfg.ToolsDir)
+	if toolDirectory == "" {
+		toolDirectory = "my_tools"
+	}
+
+	// 配置了项目目录时，相对工具路径跟随项目；否则使用程序启动目录。
+	if !filepath.IsAbs(toolDirectory) &&
+		toolDirectory != "~" &&
+		!strings.HasPrefix(toolDirectory, "~/") &&
+		!strings.HasPrefix(toolDirectory, `~\`) {
+		toolDirectory = filepath.Join(cfg.ProjectDir, toolDirectory)
+	}
+
+	cfg.ToolsDir, err = absoluteDir(toolDirectory)
+	if err != nil {
+		return Config{}, fmt.Errorf("工具目录无效：%w", err)
+	}
+
 	apiKey, _ := os.LookupEnv("MINI_GO_API_KEY")
 
 	cfg.APIKey = apiKey

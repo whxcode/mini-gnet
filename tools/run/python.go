@@ -57,12 +57,13 @@ func pythonFile(ctx context.Context, projectDir, filename string) (RunResult, er
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	execution, err := tools.RunProcess(cmd)
 
 	result := RunResult{
-		Stdout:   stdout.String(),
-		Stderr:   stderr.String(),
-		ExitCode: -1,
+		Stdout:    stdout.String(),
+		Stderr:    stderr.String(),
+		ExitCode:  -1,
+		Execution: execution,
 	}
 
 	if cmd.ProcessState != nil {
