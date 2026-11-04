@@ -42,8 +42,9 @@ tools/
 
 `input_schema` 校验模型 arguments；`output_schema` 校验返回结果里的 data，不包含 ok/error 外层。当前实现是内置工具需要的 JSON Schema 子集：
 
-- 根节点必须为 object；支持 object、string 和 64 位 integer。
-- 支持 properties、required、additionalProperties、description、minLength。
+- 根节点必须为 object；支持 object、array、string 和 64 位 integer。
+- 支持 properties、required、additionalProperties、description、minLength、items。
+- array 必须提供 items，每个数组项递归校验；错误会标明具体索引。
 - 定义文件中应显式填写 additionalProperties；本版未填写时按 false 处理。
 - 未支持的类型或关键字在注册时报错，避免声明约束却不执行校验。
 
@@ -116,12 +117,15 @@ Agent 将同一 JSON 返回模型并保存到历史。错误提示和最多三�
 
 ## 查看工具
 
-- `/tools`：查看名称、说明、参数类型和必填/可选状态。
-- `/tools run_bash`：查看该工具完整定义，包括输出 schema。
+- `/tools`：用独立边框展示每个工具，依次列出名称、简介、输入参数、执行命令和原始启动参数数组。动态工具还显示工作目录、工具目录和配置文件路径。
+- `/tools run_bash`：单独查看该工具的卡片，并附完整定义（包括输出 schema）。
+- ↑↓ / 滚轮滚动，PgUp / PgDown 翻页，Home / End 跳到首尾；Esc / Enter 返回。长路径自动折行，不省略内容。
 - 交互菜单支持滚轮、上下键、PgUp/PgDown、Home/End；Esc 或 Enter 返回。
 - 管道模式返回相同的文本说明；命令不执行工具，不写入模型对话。
 
-列表和模型拿到的工具声明来自同一注册表；默认目录中的天气示例会显示为 `city_weather`。
+菜单通过 `Registry.Infos()` 读取定义和 `DescribeLaunch()` 提供的启动说明；展示不会执行工具。内置工具中的动态参数显示为模板，真实调用路径仍以执行记录为准。可执行文件路径按当前环境解析，未安装时明确提示。启动说明只供本地查看，不发送给模型。
+
+列表和模型拿到的工具声明来自同一注册表；默认目录中的示例会显示为 `city_weather` 和 `web_search`。
 
 ## 调用详情
 
@@ -157,6 +161,9 @@ my_tools/
   weather/
     tool.json      工具定义和启动方式
     main.py        Python 天气查询示例
+  web_search/
+    tool.json      工具定义和启动方式
+    main.mjs       Node.js 异步联网搜索示例
 ```
 
 程序只扫描直接子目录的 `tool.json`，按目录名排序。工具目录不存在时只加载内置工具；没有 `tool.json` 的子目录会跳过。损坏定义、无效执行目录或重复工具名会阻止启动，并返回具体错误；外部工具不能覆盖内置工具。
@@ -209,12 +216,15 @@ printf '%s\n' '{"city":"成都"}' | python3 my_tools/weather/main.py
 
 查看不经过模型的 Go 调用示例：[my_tools/README.md](../my_tools/README.md)。
 
+同一目录还提供 Node.js 22+ 的 `web_search`，参数为 `query` 和可选的 `limit`。它使用 `await fetch()` 查询必应 RSS，返回标题、链接和摘要数组。异步操作完成后输出 JSON，由同一个外部执行器收集。用法和本地测试方式见 [用户工具说明](../my_tools/README.md)。
+
 ## 验证
 
 ```sh
 go test -race ./tools/... ./internal/... ./views/... ./net -timeout 45s
 go test ./config -run TestToolsDirectory
 python3 -B -m unittest discover -s my_tools/weather -v
+node --test my_tools/web_search/main.test.mjs
 ```
 
 测试使用临时目录和本地模拟模型，覆盖项目外加载、绝对路径、上层 cwd、外部进程输入输出、错误结果、取消、输出上限、多轮调用和 /tools 菜单。天气测试使用固定响应，不请求公网；所有自动测试都不请求付费模型。

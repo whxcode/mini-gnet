@@ -138,5 +138,7 @@ func loadTool(path string, data []byte) (*ProcessTool, error) {
 		command:    command,
 		args:       config.Execution.Args,
 		cwd:        directory,
+		toolDir:    toolDirectory,
+		configPath: filepath.Join(toolDirectory, filepath.Base(path)),
 	}, nil
 }

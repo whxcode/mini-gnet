@@ -11,7 +11,7 @@ import (
 // Handler 仍然接收原来的 App 对象并直接执行操作，没有回调注册或待处理结果。
 // 这些操作由主输入循环调用，不供后台 Agent 修改应用状态。
 type Application interface {
-	ToolDefinitions() []tools.Definition                // 当前真正注册并可调用的工具。
+	ToolInfos() []tools.Info                            // 当前注册工具的定义与本地启动说明。
 	ConfigStore() *config.Store                         // 读取和更新共享配置。
 	ActiveSession() *session.Session                    // 获取当前会话。
 	OpenSessions() []*session.Session                   // 按界面编号获取已打开会话。

@@ -18,6 +18,8 @@ type ProcessTool struct {
 	command    string
 	args       []string
 	cwd        string
+	toolDir    string
+	configPath string
 }
 
 var _ tools.Tool = (*ProcessTool)(nil)
@@ -25,6 +27,18 @@ var _ tools.Tool = (*ProcessTool)(nil)
 // Definition 返回公共定义副本，模型和 /tools 都不需要知道执行器类型。
 func (t *ProcessTool) Definition() tools.Definition {
 	return t.definition.Clone()
+}
+
+// DescribeLaunch 返回已加载的启动配置，菜单不会重新读取可能已被修改的文件。
+func (t *ProcessTool) DescribeLaunch(_ tools.Context) tools.LaunchInfo {
+	return tools.LaunchInfo{
+		Command:    t.command,
+		Args:       append([]string(nil), t.args...),
+		WorkDir:    t.cwd,
+		ToolDir:    t.toolDir,
+		ConfigPath: t.configPath,
+		Note:       "输入参数以 JSON 写入 stdin；stdout 返回 JSON，stderr 用于诊断。脚本相对路径以工作目录为起点。",
+	}
 }
 
 // Execute 启动进程、写入 JSON 参数、收集输出，再交给注册表校验业务结果。

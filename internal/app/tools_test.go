@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -43,7 +44,7 @@ func TestToolsCommandUsesRegistry(t *testing.T) {
 	}
 }
 
-// TestToolsCommandIncludesExternal 验证天气工具与内置工具一起展示，且不向模型暴露启动配置。
+// TestToolsCommandIncludesExternal 验证菜单显示外部工具路径，但模型声明不包含启动配置。
 func TestToolsCommandIncludesExternal(t *testing.T) {
 	directory, err := filepath.Abs("../../my_tools")
 	if err != nil {
@@ -81,19 +82,38 @@ func TestToolsCommandIncludesExternal(t *testing.T) {
 	defer application.Close()
 
 	var output bytes.Buffer
-	input := strings.NewReader("/tools\n/tools city_weather\n/exit\n")
+	input := strings.NewReader("/tools\n/tools city_weather\n/tools web_search\n/exit\n")
 	if err := application.RunPipe(context.Background(), input, &output); err != nil {
 		t.Fatal(err)
 	}
 
-	for _, want := range []string{"run_bash", "run_python", "city_weather", "city (string，必填)", "output_schema"} {
+	for _, want := range []string{
+		"run_bash",
+		"run_python",
+		"city_weather",
+		"city (string，必填)",
+		"web_search",
+		"query (string，必填)",
+		"limit (integer，可选)",
+		"output_schema",
+		"执行命令\nnode main.mjs",
+		"启动参数 · argv\n[\"main.mjs\"]",
+		"工具目录\n" + filepath.Join(directory, "web_search"),
+		"配置文件\n" + filepath.Join(directory, "web_search", "tool.json"),
+		"工作目录 · cwd\n" + filepath.Join(directory, "web_search"),
+	} {
 		if !strings.Contains(output.String(), want) {
 			t.Fatalf("缺少工具信息 %s：%s", want, output.String())
 		}
 	}
 
-	if strings.Contains(output.String(), "execution") {
-		t.Fatal("公共工具定义不应包含启动配置")
+	modelJSON, err := json.Marshal(registry.ModelTools())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(string(modelJSON), directory) || strings.Contains(string(modelJSON), "main.mjs") {
+		t.Fatal("模型声明不应包含本地启动配置")
 	}
 
 	if len(history.ToChatCompletionMessage()) != 1 {

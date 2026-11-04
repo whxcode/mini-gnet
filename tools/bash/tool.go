@@ -35,6 +35,16 @@ func (t *Tool) Definition() tools.Definition {
 	return t.definition.Clone()
 }
 
+// DescribeLaunch 展示命令模板；真正的 command 和 cwd 在每次调用时决定。
+func (t *Tool) DescribeLaunch(ctx tools.Context) tools.LaunchInfo {
+	return tools.LaunchInfo{
+		Command: "/bin/bash",
+		Args:    []string{"-c", "<command>"},
+		WorkDir: ctx.WorkDir,
+		Note:    "<command> 替换为输入参数 command；cwd 可覆盖默认工作目录，绝对路径不受此目录限制。",
+	}
+}
+
 // Execute 解析本工具参数并调用 Bash；不修改主进程目录。
 func (t *Tool) Execute(ctx context.Context, request tools.Request) (tools.Result, error) {
 	var args struct {

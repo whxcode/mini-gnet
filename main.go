@@ -11,10 +11,6 @@ import (
 
 // main 只在启动时判断一次终端环境，选择交互或管道入口；业务流程不再判断运行模式。
 func main() {
-	// routine.Test05()
-	// routine.Test04()
-	// routine.Test02()
-	// routine.Test01()
 	application, err := app.New()
 	if err != nil {
 		logger.Error(err)

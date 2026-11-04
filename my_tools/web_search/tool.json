@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "name": "web_search",
+  "description": "联网搜索网页，返回搜索引擎提供的标题、链接和摘要。使用必应 RSS 搜索入口，无需 API Key，适合个人功能测试。结果是搜索摘要，不代表已经读取或核实网页全文；应结合链接判断相关性。",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "minLength": 1,
+        "description": "搜索关键词，支持中文和英文。"
+      },
+      "limit": {
+        "type": "integer",
+        "description": "最多返回多少条结果，默认 5，允许 1 到 10。"
+      }
+    },
+    "required": ["query"],
+    "additionalProperties": false
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "query": {"type": "string"},
+      "source": {"type": "string"},
+      "search_url": {"type": "string"},
+      "count": {"type": "integer"},
+      "results": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "title": {"type": "string"},
+            "url": {"type": "string"},
+            "snippet": {"type": "string"}
+          },
+          "required": ["title", "url", "snippet"],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": ["query", "source", "search_url", "count", "results"],
+    "additionalProperties": false
+  },
+  "execution": {
+    "command": "node",
+    "args": ["main.mjs"],
+    "cwd": "."
+  }
+}

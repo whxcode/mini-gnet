@@ -17,6 +17,7 @@ type schema struct {
 	Required             []string           `json:"required,omitempty"`
 	AdditionalProperties bool               `json:"additionalProperties"`
 	MinLength            int                `json:"minLength,omitempty"`
+	Items                *schema            `json:"items,omitempty"`
 }
 
 var toolName = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
@@ -78,10 +79,14 @@ func parseSchema(data []byte) (*schema, error) {
 	return &s, s.check()
 }
 
-// check 检查 schema 本身，当前支持 object、string 和 integer。
+// check 检查 schema 本身，当前支持 object、array、string 和 integer。
 func (s *schema) check() error {
 	if s == nil {
 		return fmt.Errorf("属性 schema 不能为空")
+	}
+
+	if s.Items != nil && s.Type != "array" {
+		return fmt.Errorf("%s 不支持 items", s.Type)
 	}
 
 	switch s.Type {
@@ -100,6 +105,15 @@ func (s *schema) check() error {
 			if err := property.check(); err != nil {
 				return fmt.Errorf("%s: %w", name, err)
 			}
+		}
+
+	case "array":
+		if len(s.Properties) != 0 || len(s.Required) != 0 || s.AdditionalProperties || s.MinLength != 0 {
+			return fmt.Errorf("array 只支持 items，不支持对象或字符串约束")
+		}
+
+		if err := s.Items.check(); err != nil {
+			return fmt.Errorf("array.items: %w", err)
 		}
 
 	case "string", "integer":
@@ -155,6 +169,19 @@ func (s *schema) validate(value any, path string) error {
 			}
 
 			if err := property.validate(field, path+"."+name); err != nil {
+				return err
+			}
+		}
+
+	case "array":
+		items, ok := value.([]any)
+		if !ok {
+			return fmt.Errorf("%s 必须是 array", path)
+		}
+
+		for index, item := range items {
+			itemPath := fmt.Sprintf("%s[%d]", path, index)
+			if err := s.Items.validate(item, itemPath); err != nil {
 				return err
 			}
 		}

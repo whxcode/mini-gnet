@@ -34,6 +34,16 @@ func (t *Tool) Definition() tools.Definition {
 	return t.definition.Clone()
 }
 
+// DescribeLaunch 说明临时脚本的启动方式；实际临时路径执行时才生成。
+func (t *Tool) DescribeLaunch(_ tools.Context) tools.LaunchInfo {
+	return tools.LaunchInfo{
+		Command: "python3",
+		Args:    []string{"main.py"},
+		WorkDir: "每次调用新建的临时目录",
+		Note:    "将 code 写入临时 main.py 后执行，结束后清理目录；具体路径见调用记录。",
+	}
+}
+
 // Execute 将模型参数交给现有临时脚本执行器，保留失败时的标准输出和错误输出。
 func (t *Tool) Execute(ctx context.Context, request tools.Request) (tools.Result, error) {
 	var args struct {

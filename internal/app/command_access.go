@@ -30,7 +30,7 @@ func (a *App) RequestExit() {
 	a.quit = true
 }
 
-// ToolDefinitions 从共享注册表读取工具，/tools 与发送给模型的声明来自同一份数据。
-func (a *App) ToolDefinitions() []tools.Definition {
-	return a.registry.Definitions()
+// ToolInfos 从注册表读取定义与本地启动说明，供 /tools 展示。
+func (a *App) ToolInfos() []tools.Info {
+	return a.registry.Infos(tools.Context{WorkDir: a.config.Current().ProjectDir})
 }

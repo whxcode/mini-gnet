@@ -1,32 +1,33 @@
 package commands
 
 import (
+	"fmt"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
+	"github.com/whxcode/mini-gnet/tools"
 )
 
 // ShowTools 打开可滚动的工具说明，退出菜单后继续原会话。
-func ShowTools(text string) error {
-	_, err := tea.NewProgram(newTools(text)).Run()
+func ShowTools(items []tools.Info, detail bool) error {
+	_, err := tea.NewProgram(newTools(items, detail)).Run()
 
 	return err
 }
 
 // toolsModel 只保存菜单显示状态，不加载定义或执行工具。
 type toolsModel struct {
-	text   string // 调用方从注册表生成的说明。
-	width  int    // 菜单总宽度。
-	height int    // 终端可用高度。
-	offset int    // 从第一行开始的滚动偏移。
-	done   bool   // 是否已返回聊天。
+	cards  []toolCard // 从注册表整理的展示数据。
+	width  int        // 菜单总宽度。
+	height int        // 终端可用高度。
+	offset int        // 从第一行开始的滚动偏移。
+	done   bool       // 是否已返回聊天。
 }
 
 // newTools 创建工具菜单，收到窗口消息后按真实尺寸排版。
-func newTools(text string) toolsModel {
+func newTools(items []tools.Info, detail bool) toolsModel {
 	return toolsModel{
-		text:   text,
+		cards:  toolCards(items, detail),
 		width:  78,
 		height: 24,
 	}
@@ -39,7 +40,16 @@ func (m toolsModel) Init() tea.Cmd {
 
 // lines 将说明折行，滚动时使用显示行而不是原始 JSON 行。
 func (m toolsModel) lines() []string {
-	return strings.Split(ansi.Hardwrap(m.text, max(1, m.width-2), true), "\n")
+	if len(m.cards) == 0 {
+		return []string{"当前没有已注册工具。"}
+	}
+
+	var cards []string
+	for _, card := range m.cards {
+		cards = append(cards, card.render(m.width-2))
+	}
+
+	return strings.Split(strings.Join(cards, "\n\n"), "\n")
 }
 
 // Update 处理滚动和退出，Esc、Enter、Ctrl+C 均返回原输入界面。
@@ -91,8 +101,13 @@ func (m toolsModel) View() tea.View {
 
 	lines := m.lines()
 	end := min(len(lines), m.offset+max(1, m.height-4))
-	text := accent.Render("◆ 已注册工具") + "\n\n" + strings.Join(lines[m.offset:end], "\n")
-	text += "\n" + muted.Render(clip("↑↓ / 滚轮 / PgUp/PgDown · Esc / Enter 返回", m.width-2))
+	heading := fmt.Sprintf("工具 · %d 个", len(m.cards))
+	text := accent.Render(clip(heading, m.width-2)) + "\n\n" + strings.Join(lines[m.offset:end], "\n")
+	footer := fmt.Sprintf("%d–%d / %d 行 · ↑↓ 滚动 · PgUp/PgDown · /tools <名称> 详情 · Esc 返回", m.offset+1, end, len(lines))
+	if m.width < 80 {
+		footer = fmt.Sprintf("%d/%d · ↑↓ 滚动 · Esc 返回", end, len(lines))
+	}
+	text += "\n" + muted.Render(clip(footer, m.width-2))
 	view := tea.NewView(panel.Width(m.width).Render(text))
 	view.MouseMode = tea.MouseModeCellMotion
 

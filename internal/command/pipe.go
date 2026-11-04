@@ -10,7 +10,7 @@ import (
 func (c *Command) RunPipe(a Application, args []string, output io.Writer) error {
 	switch {
 	case c.Name == ToolsName:
-		text, err := toolsText(a.ToolDefinitions(), args)
+		text, err := toolsText(a.ToolInfos(), args)
 		if err != nil {
 			return err
 		}
