@@ -172,7 +172,7 @@ func (m *Composer) moveTo(target int, selecting bool) {
 func (m *Composer) normalize() {
 	// 只解析尚未转换的原始文字，已有标签的内部字符保持不变。
 	source := m.text.Value()
-	if !strings.Contains(source, "/skills{") {
+	if !strings.Contains(source, "/skills{") && !strings.Contains(source, "/mcp{") {
 		return
 	}
 	parts, err := query.Parse(source)
@@ -189,7 +189,7 @@ func (m *Composer) normalize() {
 	for _, part := range parts {
 		value := part.Value
 		sourceBytes := len(value)
-		if part.Kind == query.Skill {
+		if part.Kind != query.Text {
 			sourceBytes = strings.IndexByte(source[consumedBytes:], '}') + 1
 			value = string(m.encodeReference(part))
 		}
@@ -270,4 +270,10 @@ func (m Composer) Update(msg tea.Msg) (Composer, tea.Cmd) {
 func readClipboard() tea.Msg {
 	text, err := clipboard.ReadAll()
 	return clipboardTextMsg{text: text, err: err}
+}
+
+// InsertMCP 插入当前任务的 MCP 引用标签，不建立连接或修改会话配置。
+func (m *Composer) InsertMCP(name string) {
+	m.text.DeleteSelection()
+	m.text.InsertRune(m.encodeReference(query.Segment{Kind: query.MCP, Value: name}))
 }

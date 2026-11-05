@@ -68,16 +68,20 @@ func TestToolsCommandIncludesExternal(t *testing.T) {
 	}
 
 	cfg := config.Config{
-		ChatsDir:   t.TempDir(),
-		ProjectDir: t.TempDir(),
-		ToolsDir:   directory,
+		ChatsDir:      t.TempDir(),
+		MCPConfigPath: filepath.Join(t.TempDir(), "mcp.json"),
+		ProjectDir:    t.TempDir(),
+		ToolsDir:      directory,
 	}
 	history, err := session.NewHistory(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	application := newApp(cfg, registry)
+	application, err := newApp(cfg, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
 	application.AttachSession(history)
 	defer application.Close()
 

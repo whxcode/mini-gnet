@@ -11,6 +11,7 @@ import (
 	"github.com/whxcode/mini-gnet/config"
 	"github.com/whxcode/mini-gnet/internal/agent"
 	commands "github.com/whxcode/mini-gnet/internal/command"
+	"github.com/whxcode/mini-gnet/internal/mcp"
 	sessions "github.com/whxcode/mini-gnet/internal/session"
 	"github.com/whxcode/mini-gnet/tools"
 	"github.com/whxcode/mini-gnet/tools/builtin"
@@ -19,6 +20,7 @@ import (
 
 // App 持有应用唯一的运行配置，并管理会话列表和输入循环。
 type App struct {
+	mcpManager     *mcp.Manager        // 共享服务配置，任务开始时读取快照。
 	config         *config.Store       // 应用唯一的共享配置。
 	CurrentSession *sessions.Session   // 当前查看和提交提问的会话。
 	agent          *agent.Agent        // 所有会话共用的执行服务。
@@ -28,15 +30,21 @@ type App struct {
 	closed         bool                // 防止重复关闭会话和历史文件。
 }
 
-// newApp 组装应用共用的配置和 Agent，不创建会话或启动协程。
-func newApp(cfg config.Config, registry *tools.Registry) *App {
+// newApp 加载 MCP 配置并组装共享组件，不创建会话或启动协程。
+func newApp(cfg config.Config, registry *tools.Registry) (*App, error) {
+	manager, err := mcp.Open(cfg.MCPConfigPath)
+	if err != nil {
+		return nil, err
+	}
+
 	store := config.NewStore(cfg)
 
 	return &App{
-		config:   store,
-		registry: registry,
-		agent:    agent.New(store, registry),
-	}
+		config:     store,
+		mcpManager: manager,
+		registry:   registry,
+		agent:      agent.New(store, registry, manager),
+	}, nil
 }
 
 // New 按顺序加载配置、工具和会话；初始化成功后，调用者负责 Close。
@@ -69,12 +77,16 @@ func New() (*App, error) {
 		return nil, err
 	}
 
+	a, err := newApp(cfg, registry)
+	if err != nil {
+		return nil, err
+	}
+
 	record, err := sessions.NewHistory(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	a := newApp(cfg, registry)
 	a.AttachSession(record)
 
 	return a, nil

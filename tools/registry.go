@@ -18,7 +18,7 @@ type entry struct {
 	output     *schema
 }
 
-// Registry 启动时一次构建，之后只读，可供多个会话并发调用。
+// Registry 构建后只读，可供多个会话共用；任务通过 WithRemote 派生独立工具集合。
 type Registry struct {
 	entries map[string]entry
 	order   []string // 保留注册顺序，让模型声明和 /tools 的显示顺序稳定。

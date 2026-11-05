@@ -11,11 +11,12 @@ import (
 	"github.com/whxcode/mini-gnet/views/input"
 )
 
-// completionItem 只用于候选展示；确认后技能进入草稿片段，命令仍是普通文本。
+// completionItem 只用于候选展示；确认后技能或 MCP 进入草稿片段，命令仍是普通文本。
 type completionItem struct {
 	name        string
 	description string
 	skill       bool
+	mcp         bool
 }
 
 // refreshCompletions 在输入词变化时重新发现技能，不在流式刷新定时器中反复读取磁盘。
@@ -36,7 +37,7 @@ func (m *terminalModel) refreshCompletions() {
 		return
 	}
 
-	// 只有整条输入是命令词时列出本地命令；句子中只补全技能。
+	// 只有整条输入是命令词时列出本地命令；句子中补全技能和 MCP 引用。
 	if strings.TrimSpace(m.session.Draft.Value()) == prefix {
 		for _, command := range commands.List() {
 			if strings.HasPrefix(string(command.Name), prefix) {
@@ -45,6 +46,17 @@ func (m *terminalModel) refreshCompletions() {
 					description: command.Description,
 				})
 			}
+		}
+	}
+
+	mcpFilter := strings.ToLower(input.MCPFilter(prefix))
+	for _, server := range m.app.mcpManager.List() {
+		if strings.Contains(strings.ToLower(server.Name), mcpFilter) {
+			m.completions = append(m.completions, completionItem{
+				name:        server.Name,
+				description: server.Description,
+				mcp:         true,
+			})
 		}
 	}
 
@@ -89,7 +101,11 @@ func (m *terminalModel) completionKey(key tea.KeyPressMsg) bool {
 			return true
 		}
 		item := m.completions[m.completionIndex]
-		m.session.Draft.Complete(item.name, item.skill)
+		if item.mcp {
+			m.session.Draft.CompleteMCP(item.name)
+		} else {
+			m.session.Draft.Complete(item.name, item.skill)
+		}
 		m.completions = nil
 		m.completionError = ""
 		m.completionPrefix, _ = m.session.Draft.CompletionPrefix()
@@ -115,6 +131,8 @@ func (m terminalModel) completionView(width int) string {
 		kind := "命令 "
 		if item.skill {
 			kind = "技能 ◆ "
+		} else if item.mcp {
+			kind = "MCP ◇ "
 		}
 		prefix := "  "
 		if index == m.completionIndex {

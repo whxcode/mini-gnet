@@ -2,6 +2,7 @@
 package config
 
 type Config struct {
+	MCPConfigPath string `json:"mcpConfigPath"` // 独立 MCP 配置文件，服务管理逻辑属于 internal/mcp。
 	BaseURL       string `json:"baseUrl"`
 	APIKey        string `-`
 	Model         string `json:"model"`

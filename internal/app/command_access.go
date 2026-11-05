@@ -3,6 +3,7 @@ package app
 import (
 	"github.com/whxcode/mini-gnet/config"
 	"github.com/whxcode/mini-gnet/internal/command"
+	"github.com/whxcode/mini-gnet/internal/mcp"
 	"github.com/whxcode/mini-gnet/internal/session"
 	"github.com/whxcode/mini-gnet/tools"
 )
@@ -33,4 +34,9 @@ func (a *App) RequestExit() {
 // ToolInfos 从注册表读取定义与本地启动说明，供 /tools 展示。
 func (a *App) ToolInfos() []tools.Info {
 	return a.registry.Infos(tools.Context{WorkDir: a.config.Current().ProjectDir})
+}
+
+// MCPManager 返回当前应用的服务管理器，命令操作不进入模型历史。
+func (a *App) MCPManager() *mcp.Manager {
+	return a.mcpManager
 }

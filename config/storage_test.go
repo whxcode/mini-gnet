@@ -7,15 +7,18 @@ import (
 	"testing"
 )
 
+// TestSaveLoadAndInvalidConfig 验证配置持久化及失败保存不破坏旧内容。
 func TestSaveLoadAndInvalidConfig(t *testing.T) {
+	t.Setenv("MINI_GO_API_KEY", "test-secret-not-a-real-key")
 	dir := t.TempDir()
 	path := filepath.Join(dir, "settings", "config.json")
 	defaults := Config{
-		BaseURL:    "http://localhost:11434/v1",
-		Model:      "old",
-		ChatsDir:   dir,
-		ProjectDir: dir,
-		ToolsDir:   filepath.Join(dir, "my_tools"),
+		BaseURL:       "http://localhost:11434/v1",
+		Model:         "old",
+		ChatsDir:      dir,
+		ProjectDir:    dir,
+		ToolsDir:      filepath.Join(dir, "my_tools"),
+		MCPConfigPath: filepath.Join(dir, "mcp.json"),
 	}
 	got, err := loadFile(path, defaults)
 	if err != nil || got.Model != "old" {

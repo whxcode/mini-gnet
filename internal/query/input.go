@@ -7,15 +7,16 @@ import (
 	"unicode"
 )
 
-// Kind 区分普通文字和技能引用；后续引用类型仍使用相同的 Value 字段。
+// Kind 区分普通文字、技能和 MCP 引用；Value 保存文字或引用名称。
 type Kind string
 
 const (
 	Text  Kind = "text"
 	Skill Kind = "skill"
+	MCP   Kind = "mcp"
 )
 
-// Segment 是输入的一段内容，技能名称不包含显示用的图标或颜色。
+// Segment 是输入的一段内容，引用名称不包含显示用的图标或颜色。
 type Segment struct {
 	Kind  Kind   `json:"kind"`
 	Value string `json:"value"`
@@ -30,6 +31,8 @@ func (input Input) Source() string {
 	for _, part := range input {
 		if part.Kind == Skill {
 			text.WriteString("/skills{" + part.Value + "}")
+		} else if part.Kind == MCP {
+			text.WriteString("/mcp{" + part.Value + "}")
 		} else {
 			text.WriteString(part.Value)
 		}
@@ -44,6 +47,8 @@ func (input Input) Label() string {
 	for _, part := range input {
 		if part.Kind == Skill {
 			text.WriteString("[技能 " + part.Value + "]")
+		} else if part.Kind == MCP {
+			text.WriteString("[MCP " + part.Value + "]")
 		} else {
 			text.WriteString(part.Value)
 		}
@@ -61,9 +66,9 @@ func (input Input) Validate() error {
 	for _, part := range input {
 		switch part.Kind {
 		case Text:
-		case Skill:
+		case Skill, MCP:
 			if strings.TrimSpace(part.Value) == "" || strings.ContainsAny(part.Value, "{}\r\n") {
-				return fmt.Errorf("技能引用名称不能为空，也不能包含花括号或换行")
+				return fmt.Errorf("引用名称不能为空，也不能包含花括号或换行")
 			}
 		default:
 			return fmt.Errorf("暂不支持引用类型 %q", part.Kind)
@@ -73,7 +78,7 @@ func (input Input) Validate() error {
 	return nil
 }
 
-// Parse 识别明确的 /skills{名称}，代码围栏、行内代码、URL 和路径中的示例保持普通文字。
+// Parse 识别明确的 /skills{名称} 和 /mcp{名称}，代码围栏、行内代码、URL 和路径中的示例保持普通文字。
 // 它只做语法解析，不查找技能，也不在这里执行任何任务。
 func Parse(source string) (Input, error) {
 	var parts Input
@@ -99,25 +104,32 @@ func Parse(source string) (Input, error) {
 			continue
 		}
 
-		if codeMarker != 0 || !strings.HasPrefix(source[index:], "/skills{") || !Boundary(source[:index]) {
+		kind := Skill
+		prefix := "/skills{"
+		if strings.HasPrefix(source[index:], "/mcp{") {
+			kind = MCP
+			prefix = "/mcp{"
+		}
+
+		if codeMarker != 0 || !strings.HasPrefix(source[index:], prefix) || !Boundary(source[:index]) {
 			index++
 			continue
 		}
 
-		end := strings.IndexByte(source[index+8:], '}')
+		end := strings.IndexByte(source[index+len(prefix):], '}')
 		if end < 0 {
-			return nil, fmt.Errorf("技能引用缺少结束的 }，请使用 /skills{名称}")
+			return nil, fmt.Errorf("引用缺少结束的 }，请使用 %s名称}", prefix)
 		}
-		end += index + 8
-		name := strings.TrimSpace(source[index+8 : end])
+		end += index + len(prefix)
+		name := strings.TrimSpace(source[index+len(prefix) : end])
 		if name == "" || strings.ContainsAny(name, "{\r\n") {
-			return nil, fmt.Errorf("技能引用名称无效，请使用 /skills{名称}")
+			return nil, fmt.Errorf("引用名称无效，请使用 %s名称}", prefix)
 		}
 
 		if index > start {
 			parts = append(parts, Segment{Kind: Text, Value: source[start:index]})
 		}
-		parts = append(parts, Segment{Kind: Skill, Value: name})
+		parts = append(parts, Segment{Kind: kind, Value: name})
 		index = end + 1
 		start = index
 	}
@@ -137,4 +149,17 @@ func Boundary(prefix string) bool {
 	chars := []rune(prefix)
 	last := chars[len(chars)-1]
 	return unicode.IsSpace(last) || unicode.Is(unicode.Han, last) || strings.ContainsRune("，。；：（、", last)
+}
+
+// MCPNames 只读取本次输入显式选择的服务，按首次出现顺序去重。
+func (input Input) MCPNames() []string {
+	var names []string
+	seen := make(map[string]bool)
+	for _, part := range input {
+		if part.Kind == MCP && !seen[part.Value] {
+			names = append(names, part.Value)
+			seen[part.Value] = true
+		}
+	}
+	return names
 }

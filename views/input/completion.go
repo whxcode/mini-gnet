@@ -59,3 +59,24 @@ func SkillFilter(prefix string) string {
 
 	return strings.TrimPrefix(strings.TrimPrefix(prefix, "/skills{"), "/")
 }
+
+// CompleteMCP 用 MCP 标签替换光标前的候选词，保留后面的文字。
+func (m *Composer) CompleteMCP(name string) {
+	prefix, ok := m.CompletionPrefix()
+	if !ok {
+		return
+	}
+
+	end := m.offset()
+	m.moveTo(end-len([]rune(prefix)), true)
+	m.text.DeleteSelection()
+	m.InsertMCP(name)
+}
+
+// MCPFilter 将斜线候选词转换为服务名称过滤条件。
+func MCPFilter(prefix string) string {
+	if strings.HasPrefix("/mcp", prefix) {
+		return ""
+	}
+	return strings.TrimPrefix(strings.TrimPrefix(prefix, "/mcp{"), "/")
+}

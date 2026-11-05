@@ -69,6 +69,10 @@ func handleConfig(a Application, _ []string) error {
 	path, _ := config.Path()
 	text := "配置已保存并应用：" + path + "\n模型：" + next.Model
 
+	if next.MCPConfigPath != current.MCPConfigPath {
+		text += "\nMCP 配置路径已保存，重启程序后加载：" + next.MCPConfigPath
+	}
+
 	if next.ToolsDir != current.ToolsDir {
 		text += "\n工具目录已保存，重启程序后加载：" + next.ToolsDir
 	}

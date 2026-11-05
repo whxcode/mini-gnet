@@ -129,3 +129,25 @@ func TestComposerPreservesExistingReferences(t *testing.T) {
 		t.Fatal("不完整引用应该提示错误并保留原输入")
 	}
 }
+
+// TestComposerMCPTag 验证 MCP 标签整体删除、粘贴、窄窗口和提交副本。
+func TestComposerMCPTag(t *testing.T) {
+	m := NewComposer()
+	m.SetValue("使用 /mcp{docs}")
+	m.SetWidth(18)
+	if !strings.Contains(ansi.Strip(m.View()), "◇ docs") || strings.Contains(m.View(), "/mcp{") {
+		t.Fatal("MCP 未显示为标签")
+	}
+	parts, err := m.Submission()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
+	if m.Value() != "使用 " || !reflect.DeepEqual(parts.MCPNames(), []string{"docs"}) {
+		t.Fatal("标签删除不完整或修改了已提交内容")
+	}
+	m, _ = m.Update(tea.PasteMsg{Content: "/mcp{docs} 和 /skills{review}"})
+	if !strings.Contains(ansi.Strip(m.View()), "◇ docs") || len(m.Segments().MCPNames()) != 1 {
+		t.Fatal("混合粘贴没有转换 MCP 标签")
+	}
+}

@@ -11,12 +11,15 @@ internal/
   task/      单次任务的输入、取消信号和完成结果
   query/     文字/引用片段、输入语法和执行时的消息组装
   skill/     扫描技能目录、解析和读取 SKILL.md
+  mcp/       服务配置管理、协议连接、工具发现与调用
 ```
 
 依赖方向是 `app → session → agent → task`；App 同时负责创建共用的 Agent，Session 也使用 Task。
 App 还依赖 Command；Command 通过 Application 接口直接操作传入的 App，不反向导入 App。
 Session、Agent、Task 都不导入 App，Agent 不导入 Session 或终端显示包。
 配置由 `config.Store` 保存一份，App 和 Agent 共用它；工具注册表也由 App 和 Agent 共用，包含定义与执行入口。
+
+MCP 的配置由 App 共享的 `mcp.Manager` 管理，主配置只保存文件路径。命令修改配置，后台 Agent 在任务开始时读取所选服务快照；详见 `mcp/README.md`。
 
 ## 按顺序读代码
 

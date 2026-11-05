@@ -31,6 +31,7 @@ func (m Composer) layout() composerLayout {
 	point := cellPosition{}
 	textStyle := lipgloss.NewStyle().Foreground(inputForeground).Background(inputBackground)
 	skillStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#E5D3FF")).Background(lipgloss.Color("#504366")).Bold(true)
+	mcpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#B7F4E5")).Background(lipgloss.Color("#28554F")).Bold(true)
 	selectionStyle := lipgloss.NewStyle().Foreground(inputForeground).Background(lipgloss.Color("#61728E"))
 	start, end, selected := m.text.Selection()
 	selectionStart := logicalOffset(m.text.Value(), start)
@@ -44,6 +45,9 @@ func (m Composer) layout() composerLayout {
 			if part.Kind == query.Skill {
 				value = "◆ " + cleanLabel(value)
 				style = skillStyle
+			} else if part.Kind == query.MCP {
+				value = "◇ " + cleanLabel(value)
+				style = mcpStyle
 			}
 		}
 		if value == "\n" {
@@ -92,7 +96,7 @@ func (m Composer) visibleStart(layout composerLayout) int {
 	return max(0, layout.positions[m.offset()].y-m.MaxHeight+1)
 }
 
-// View 绘制真正的技能标签，底层占位字符与 /skills{...} 语法不会出现在界面里。
+// View 绘制技能和 MCP 引用标签，底层占位字符与引用语法不会出现在界面里。
 func (m Composer) View() string {
 	layout := m.layout()
 	start := m.visibleStart(layout)

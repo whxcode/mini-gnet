@@ -10,6 +10,7 @@ import (
 type Name string
 
 const (
+	MCPName      Name = "/mcp"
 	HelpName     Name = "/help"
 	ConfigName   Name = "/config"
 	ResumeName   Name = "/resume"
@@ -48,8 +49,14 @@ func List() []Command {
 			Handler:     handleTools,
 		},
 		{
+			Name:        MCPName,
+			Description: "管理本地 MCP 服务：add / edit / show / search / remove（尚未连接）",
+			MaxArgs:     3,
+			Handler:     handleMCP,
+		},
+		{
 			Name:        ConfigName,
-			Description: "编辑配置，保存后立即生效",
+			Description: "编辑模型、目录和 MCP 配置路径",
 			Handler:     handleConfig,
 		},
 		{
@@ -98,7 +105,7 @@ func List() []Command {
 func Lookup(query string) (*Command, []string, error) {
 	text := strings.TrimSpace(query)
 
-	if strings.HasPrefix(text, "/skills{") || !strings.HasPrefix(text, "/") || strings.ContainsAny(text, "\n\r") {
+	if strings.HasPrefix(text, "/skills{") || strings.HasPrefix(text, "/mcp{") || !strings.HasPrefix(text, "/") || strings.ContainsAny(text, "\n\r") {
 		return nil, nil, nil
 	}
 

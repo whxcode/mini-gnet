@@ -55,7 +55,7 @@ func TestAgentCountsEveryModelRound(t *testing.T) {
 		ProjectDir:    t.TempDir(),
 		ContextWindow: 1000,
 	})
-	runner := New(store, registry)
+	runner := New(store, registry, nil)
 	job := task.New(context.Background(), "查看当前目录")
 	defer job.Cancel()
 	if err := runner.Run(job, history, NewOutput(nil)); err != nil {

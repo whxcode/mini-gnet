@@ -9,30 +9,34 @@ import (
 
 	"github.com/sashabaranov/go-openai"
 	"github.com/whxcode/mini-gnet/config"
+	"github.com/whxcode/mini-gnet/internal/mcp"
 	"github.com/whxcode/mini-gnet/internal/task"
 	"github.com/whxcode/mini-gnet/net"
 	prompt "github.com/whxcode/mini-gnet/system_propmt"
 	"github.com/whxcode/mini-gnet/tools"
+	mcptools "github.com/whxcode/mini-gnet/tools/mcp"
 	"github.com/whxcode/mini-gnet/views/message"
 )
 
 // Agent 是应用共用的模型执行服务，不持有当前会话或任务队列。
 type Agent struct {
+	mcp    *mcp.Manager    // 共享配置管理器，仅在任务开始时读取所选服务。
 	config *config.Store   // 所有会话共享的运行配置。
 	tools  *tools.Registry // 共用的定义和执行入口，Agent 不关心工具的具体实现。
 }
 
 // New 创建共用的 Agent；它不启动协程，也不创建网络连接。
-func New(cfg *config.Store, registry *tools.Registry) *Agent {
+func New(cfg *config.Store, registry *tools.Registry, manager *mcp.Manager) *Agent {
 	return &Agent{
 		config: cfg,
+		mcp:    manager,
 		tools:  registry,
 	}
 }
 
 // Run 由会话消费循环同步调用：保存提问、请求模型、读取流、执行工具，直到本项结束。
 // 本函数只返回执行错误，队列、状态收尾和完成通知由 Session 负责。
-func (a *Agent) Run(job *task.Task, history *message.TempMessage, display *Output) error {
+func (a *Agent) Run(job *task.Task, history *message.TempMessage, display *Output) (runErr error) {
 	ctx := job.Context
 
 	if err := ctx.Err(); err != nil {
@@ -62,8 +66,37 @@ func (a *Agent) Run(job *task.Task, history *message.TempMessage, display *Outpu
 		Text: job.Input.Label(),
 	})
 
-	// 任务对象不存配置或工具；本项执行期间不重新读取配置，避免中途换模型。
-	modelTools := a.tools.ModelTools() // 工具列表在应用启动时加载，之后只读，所有会话共用。
+	// 工具集合只属于本次执行：没有显式 MCP 引用时，始终只使用基础注册表。
+	registry := a.tools
+	names := job.Input.MCPNames()
+	if len(names) > 0 {
+		if a.mcp == nil {
+			return fmt.Errorf("当前执行器没有配置 MCP 管理器")
+		}
+
+		servers, err := a.mcp.Select(names)
+		if err != nil {
+			return err
+		}
+
+		display.Update(Event{
+			Kind: Status,
+			Role: Tool,
+			Text: "正在获取本次任务的 MCP 工具…",
+		})
+		var connections *mcptools.Connections
+		registry, connections, err = mcptools.Prepare(ctx, a.tools, servers)
+		if err != nil {
+			return err
+		}
+
+		defer func() {
+			runErr = errors.Join(runErr, connections.Close())
+		}()
+	}
+
+	// 本项执行期间复用同一份工具声明和执行映射，下一个任务重新组装。
+	modelTools := registry.ModelTools()
 	projectDir := cfg.ProjectDir
 	toolPending := false
 	failures := 0
@@ -108,6 +141,7 @@ func (a *Agent) Run(job *task.Task, history *message.TempMessage, display *Outpu
 			ApiKey:  cfg.APIKey,
 			Model:   cfg.Model,
 		}
+
 		stream, err := client.OpenStream(ctx, messages, modelTools)
 		if err != nil {
 			return err
@@ -211,6 +245,7 @@ func (a *Agent) Run(job *task.Task, history *message.TempMessage, display *Outpu
 				Name: call.Function.Name + " · 调用",
 				Text: tools.CallText(call.Function.Name, call.ID, call.Function.Arguments),
 			}
+
 			callIndex := display.Update(callEvent)
 
 			result := tools.Result{
@@ -221,7 +256,7 @@ func (a *Agent) Run(job *task.Task, history *message.TempMessage, display *Outpu
 			}
 
 			if failures < 3 {
-				result = a.tools.Execute(ctx, call.Function.Name, tools.Request{
+				result = registry.Execute(ctx, call.Function.Name, tools.Request{
 					Arguments: json.RawMessage(call.Function.Arguments),
 					Context:   tools.Context{WorkDir: projectDir},
 				})

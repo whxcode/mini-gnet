@@ -47,7 +47,7 @@ func TestFinishReasonControlsCompletion(t *testing.T) {
 			runner := New(config.NewStore(config.Config{
 				BaseURL: server.URL,
 				Model:   "test",
-			}), nil)
+			}), nil, nil)
 			output := NewOutput(nil)
 			job := task.New(context.Background(), "问题")
 			defer job.Cancel()

@@ -32,7 +32,7 @@ func TestRunWithoutSession(t *testing.T) {
 		Model:      "test",
 		ProjectDir: t.TempDir(),
 	})
-	runner := New(store, nil)
+	runner := New(store, nil, nil)
 	output := NewOutput(nil)
 	job := task.New(context.Background(), "你好")
 	defer job.Cancel()

@@ -17,17 +17,20 @@ var fieldLabels = []string{
 	"工作目录（留空使用启动目录）",
 	"工具目录（默认 my_tools，修改后重启生效）",
 	"上下文上限 tokens（仅供统计，0 表示未知）",
+	"MCP 配置文件（修改后重启生效）",
 }
 
 type configModel struct {
 	fields []textinput.Model
 	focus  int
 	width  int
+	height int
 	saved  *config.Config
 	done   bool
 	err    string
 }
 
+// newConfig 创建配置副本，只有确认保存时才交回调用方。
 func newConfig(cfg config.Config) configModel {
 	values := []string{
 		cfg.BaseURL,
@@ -37,8 +40,9 @@ func newConfig(cfg config.Config) configModel {
 		cfg.ProjectDir,
 		cfg.ToolsDir,
 		strconv.Itoa(cfg.ContextWindow),
+		cfg.MCPConfigPath,
 	}
-	m := configModel{width: 78}
+	m := configModel{width: 78, height: 24}
 
 	for i, value := range values {
 		field := textinput.New()
@@ -60,17 +64,23 @@ func newConfig(cfg config.Config) configModel {
 	return m
 }
 
+// Init 配置表单无需异步加载。
 func (m configModel) Init() tea.Cmd {
 	return nil
 }
 
+// Update 处理字段编辑、校验和 Esc 放弃，不直接保存配置。
 func (m configModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = max(10, msg.Width-1)
+		m.height = max(5, msg.Height)
 
 		for i := range m.fields {
-			m.fields[i].SetWidth(max(4, m.width-4))
+			position := m.fields[i].Position()
+			m.fields[i].SetWidth(max(1, m.width-3))
+			m.fields[i].CursorEnd()
+			m.fields[i].SetCursor(position)
 		}
 
 	case tea.KeyPressMsg:
@@ -97,6 +107,7 @@ func (m configModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					ProjectDir:    m.fields[4].Value(),
 					ToolsDir:      m.fields[5].Value(),
 					ContextWindow: contextWindow,
+					MCPConfigPath: m.fields[7].Value(),
 				})
 				if err != nil {
 					m.err = err.Error()
@@ -104,7 +115,8 @@ func (m configModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 
-				m.saved, m.done = &cfg, true
+				m.saved = &cfg
+				m.done = true
 
 				return m, tea.Quit
 			}
@@ -139,20 +151,35 @@ func (m configModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// View 按可用高度显示字段，短窗口聚焦当前项并保留错误与返回提示。
 func (m configModel) View() tea.View {
 	if m.done {
 		return tea.NewView("")
 	}
 
-	lines := []string{accent.Render("◆ 配置"), ""}
+	lines := []string{accent.Render("◆ 配置")}
+	compact := m.height < 2*len(m.fields)+6
+	if !compact {
+		lines = append(lines, "")
+	}
+
+	cursorLine := 0
 
 	for i, field := range m.fields {
+		if compact && i != m.focus {
+			continue
+		}
+
 		label := fieldLabels[i]
 
 		if i == m.focus {
-			label = accent.Render("› " + label)
+			label = accent.Render(clip("› "+label, m.width-2))
 		} else {
-			label = muted.Render("  " + label)
+			label = muted.Render(clip("  "+label, m.width-2))
+		}
+
+		if i == m.focus {
+			cursorLine = len(lines) + 1
 		}
 
 		lines = append(lines, label, field.View())
@@ -164,13 +191,18 @@ func (m configModel) View() tea.View {
 		button = accent.Render("› 保存并应用")
 	}
 
-	lines = append(lines, "", button)
+	if !compact {
+		lines = append(lines, "")
+	}
+	if !compact || m.focus == len(m.fields) {
+		lines = append(lines, button)
+	}
 
 	if m.err != "" {
 		lines = append(lines, bad.Render(clip(m.err, m.width-2)))
 	}
 
-	lines = append(lines, muted.Render("↑↓ / Tab 切换 · Enter 下一项/保存 · Esc 放弃并返回"))
+	lines = append(lines, muted.Render(clip("Esc 返回 · Tab / ↑↓ 切换 · Enter 下一项/保存", m.width-2)))
 	v := tea.NewView(panel.Width(m.width).Render(strings.Join(lines, "\n")))
 
 	if m.focus < len(m.fields) {
@@ -178,7 +210,7 @@ func (m configModel) View() tea.View {
 
 		if v.Cursor != nil {
 			v.Cursor.Position.X++
-			v.Cursor.Position.Y += 3 + m.focus*2
+			v.Cursor.Position.Y += cursorLine
 		}
 	}
 

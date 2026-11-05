@@ -1,9 +1,10 @@
 # 本地命令模块
 
-这里管理 `/help`、`/tools`、`/skills`、`/config`、`/resume`、`/new`、`/sessions`、`/ps`、`/stop`、`/exit`。
+这里管理 `/mcp`、`/help`、`/tools`、`/skills`、`/config`、`/resume`、`/new`、`/sessions`、`/ps`、`/stop`、`/exit`。
 
 - `registry.go`：命令名称、说明、参数限制、handler 注册，以及 `Lookup` 和帮助文本。
 - `handlers.go`：执行各命令，完成操作后只返回错误。
+- `mcp.go`：服务配置菜单、增删改查和管道操作，核心逻辑在独立 `internal/mcp` 包。
 - `tools.go`：从实际注册表生成 /tools 列表和定义详情。
 - `skills.go`：查看技能目录和引用写法；不设置待选状态、不加载正文。
 - `application.go`：命令需要的应用操作；App 实现此接口。

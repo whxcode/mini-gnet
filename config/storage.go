@@ -48,6 +48,7 @@ func loadFile(path string, defaults Config) (Config, error) {
 	return Normalize(cfg)
 }
 
+// Normalize 校验主配置并解析路径，不读取 MCP 服务内容。
 func Normalize(cfg Config) (Config, error) {
 	if cfg.ContextWindow < 0 {
 		return Config{}, fmt.Errorf("上下文上限不能小于 0；未知时填写 0")
@@ -109,6 +110,21 @@ func Normalize(cfg Config) (Config, error) {
 	cfg.ToolsDir, err = absoluteDir(toolDirectory)
 	if err != nil {
 		return Config{}, fmt.Errorf("工具目录无效：%w", err)
+	}
+
+	mcpPath := strings.TrimSpace(cfg.MCPConfigPath)
+	if mcpPath == "" {
+		mainPath, err := Path()
+		if err != nil {
+			return Config{}, err
+		}
+
+		mcpPath = filepath.Join(filepath.Dir(mainPath), "mcp.json")
+	}
+
+	cfg.MCPConfigPath, err = absoluteDir(mcpPath)
+	if err != nil {
+		return Config{}, fmt.Errorf("MCP 配置路径无效：%w", err)
 	}
 
 	apiKey, _ := os.LookupEnv("MINI_GO_API_KEY")

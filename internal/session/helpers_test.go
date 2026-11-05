@@ -31,7 +31,7 @@ func sessionForTest(t *testing.T, url string) (*config.Store, *sessions.Session)
 		t.Fatal(err)
 	}
 
-	s := sessions.New(history, agent.New(store, registry))
+	s := sessions.New(history, agent.New(store, registry, nil))
 	go s.Run()
 	t.Cleanup(func() {
 		s.Shutdown()

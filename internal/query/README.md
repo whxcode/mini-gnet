@@ -37,3 +37,6 @@
 - `views/input/composer.go`：编辑和结构化快照。
 - `views/input/composer_layout.go`：标签颜色、折行、选区和光标位置。
 - `internal/app/completion.go`：候选命令与技能，确认候选不发送任务。
+
+
+MCP 引用使用 `/mcp{名称}`，保存为 `kind: "mcp"` 片段。`Input.MCPNames()` 读取本次选择并去重；不扫描旧历史。Agent 在任务开始时连接所选服务，声明和执行映射只在当前任务内有效。引用可与技能混用，代码示例和 URL 内的文字仍不解析。

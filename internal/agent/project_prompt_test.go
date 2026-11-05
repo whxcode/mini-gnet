@@ -87,7 +87,7 @@ func TestProjectPromptAcrossRounds(t *testing.T) {
 		Model:      "test",
 		ProjectDir: project,
 	})
-	runner := New(store, registry)
+	runner := New(store, registry, nil)
 	for _, query := range []string{"查看目录", "再次提问"} {
 		job := task.New(context.Background(), query)
 		err := runner.Run(job, history, NewOutput(nil))

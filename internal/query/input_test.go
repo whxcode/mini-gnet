@@ -72,3 +72,26 @@ func TestResolveReadsCurrentBody(t *testing.T) {
 		t.Fatal("未知类型未报错")
 	}
 }
+
+// TestMCPReferences 验证混合引用、顺序去重和代码示例不激活服务。
+func TestMCPReferences(t *testing.T) {
+	source := "请使用 /mcp{docs} 和 /skills{review} 再用 /mcp{docs} /mcp{other}"
+	input, err := Parse(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if input.Source() != source || !reflect.DeepEqual(input.MCPNames(), []string{"docs", "other"}) {
+		t.Fatal("混合引用或去重错误", input)
+	}
+	for _, source := range []string{"`/mcp{docs}`", "```\n/mcp{docs}\n```", "https://example.com/mcp{docs}", "/tmp/mcp{docs}"} {
+		input, err := Parse(source)
+		if err != nil || len(input.MCPNames()) != 0 {
+			t.Fatal("代码或路径被当成服务选择", source, err)
+		}
+	}
+	for _, source := range []string{"/mcp{", "/mcp{}", "/mcp{a\nb}"} {
+		if _, err := Parse(source); err == nil {
+			t.Fatal("错误引用没有被拒绝", source)
+		}
+	}
+}
