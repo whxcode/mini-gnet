@@ -42,7 +42,7 @@ func TestContextCommandFollowsSession(t *testing.T) {
 		a.ActivateSession(s)
 		before := len(s.History.ToChatCompletionMessage())
 		var output bytes.Buffer
-		if err := cmd.RunPipe(a, args, &output); err != nil {
+		if err := cmd.RunPipe(context.Background(), a, args, &output); err != nil {
 			t.Fatal(err)
 		}
 		if !strings.Contains(output.String(), s.History.SessionID) {

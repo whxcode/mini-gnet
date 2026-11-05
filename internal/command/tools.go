@@ -1,6 +1,7 @@
 package command
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/whxcode/mini-gnet/tools"
@@ -8,7 +9,7 @@ import (
 )
 
 // handleTools 展示只读工具说明；Esc 返回，不执行工具或写入模型历史。
-func handleTools(a Application, args []string) error {
+func handleTools(_ context.Context, a Application, args []string) error {
 	items, err := selectTools(a.ToolInfos(), args)
 	if err != nil {
 		return err

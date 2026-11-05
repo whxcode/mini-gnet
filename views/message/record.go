@@ -11,7 +11,7 @@ import (
 // 必须显式实现：嵌入的 SDK 消息自带 MarshalJSON，否则会忽略本地元数据字段。
 func (r Record) MarshalJSON() ([]byte, error) {
 	data, err := json.Marshal(r.ChatCompletionMessage)
-	if err != nil || (r.Response == nil && r.Execution == nil && len(r.Input) == 0) {
+	if err != nil || (r.Response == nil && r.Execution == nil && r.Summary == nil && len(r.Input) == 0) {
 		return data, err
 	}
 
@@ -48,6 +48,14 @@ func (r Record) MarshalJSON() ([]byte, error) {
 		fields["user_input"] = metadata
 	}
 
+	if r.Summary != nil {
+		metadata, err := json.Marshal(r.Summary)
+		if err != nil {
+			return nil, err
+		}
+		fields["summary_source"] = metadata
+	}
+
 	return json.Marshal(fields)
 }
 
@@ -61,6 +69,7 @@ func (r *Record) UnmarshalJSON(data []byte) error {
 		Input     query.Input          `json:"user_input"`
 		Response  *ResponseInfo        `json:"agent_response"`
 		Execution *tools.ExecutionInfo `json:"tool_execution"`
+		Summary   *SummarySource       `json:"summary_source"`
 	}
 
 	if err := json.Unmarshal(data, &metadata); err != nil {
@@ -70,6 +79,7 @@ func (r *Record) UnmarshalJSON(data []byte) error {
 	r.Response = metadata.Response
 	r.Execution = metadata.Execution
 	r.Input = metadata.Input
+	r.Summary = metadata.Summary
 
 	return nil
 }

@@ -1,6 +1,7 @@
 package command
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -12,12 +13,12 @@ import (
 )
 
 // handleHelp 展示从注册表生成的帮助；菜单关闭后直接返回主循环。
-func handleHelp(_ Application, _ []string) error {
+func handleHelp(_ context.Context, _ Application, _ []string) error {
 	return menus.ShowHelp(HelpText())
 }
 
 // handleConfig 完成配置编辑、保存和应用；Esc 不修改状态，保存失败保留原配置和会话。
-func handleConfig(a Application, _ []string) error {
+func handleConfig(_ context.Context, a Application, _ []string) error {
 	store := a.ConfigStore()
 	current := store.Current()
 	edited, err := menus.EditConfig(current)
@@ -87,7 +88,7 @@ func handleConfig(a Application, _ []string) error {
 }
 
 // handleResume 恢复历史或切回已打开的会话；后台任务和旧记录保持打开。
-func handleResume(a Application, args []string) error {
+func handleResume(_ context.Context, a Application, args []string) error {
 	cfg := a.ConfigStore().Current()
 	var id string
 
@@ -123,7 +124,7 @@ func handleResume(a Application, args []string) error {
 }
 
 // handleNew 创建并切换新会话；创建失败时继续使用原会话。
-func handleNew(a Application, _ []string) error {
+func handleNew(_ context.Context, a Application, _ []string) error {
 	next, err := sessions.NewHistory(a.ConfigStore().Current())
 	if err != nil {
 		return err
@@ -135,7 +136,7 @@ func handleNew(a Application, _ []string) error {
 }
 
 // handleExit 设置应用退出状态，主循环结束后由 main 统一释放资源。
-func handleExit(a Application, _ []string) error {
+func handleExit(_ context.Context, a Application, _ []string) error {
 	if count := a.RunningCount(); count > 0 {
 		confirmed, err := menus.ConfirmExit(count)
 		if err != nil {
@@ -153,7 +154,7 @@ func handleExit(a Application, _ []string) error {
 }
 
 // handleSessions 列出已打开会话或按编号/ID 切换，始终保留旧任务及输入草稿。
-func handleSessions(a Application, args []string) error {
+func handleSessions(_ context.Context, a Application, args []string) error {
 	current := a.ActiveSession()
 	opened := a.OpenSessions()
 
@@ -232,7 +233,7 @@ func handleSessions(a Application, args []string) error {
 }
 
 // handleStop 取消当前会话正在执行和等待执行的任务；其他会话继续执行。
-func handleStop(a Application, _ []string) error {
+func handleStop(_ context.Context, a Application, _ []string) error {
 	s := a.ActiveSession()
 	state := s.Snapshot()
 

@@ -2,6 +2,7 @@
 package command
 
 import (
+	"context"
 	"fmt"
 	"strings"
 )
@@ -10,6 +11,7 @@ import (
 type Name string
 
 const (
+	CompactName  Name = "/compact"
 	ContextName  Name = "/context"
 	MCPName      Name = "/mcp"
 	HelpName     Name = "/help"
@@ -25,7 +27,7 @@ const (
 )
 
 // Handler 接收当前应用的操作接口，完成命令后只返回错误。
-type Handler func(app Application, args []string) error
+type Handler func(ctx context.Context, app Application, args []string) error
 
 // Command 把命令名称、说明、参数限制和实际处理函数放在同一条注册记录中。
 type Command struct {
@@ -38,6 +40,11 @@ type Command struct {
 // List 是内置命令的唯一注册位置，同时供命令查找、帮助和输入候选使用。
 func List() []Command {
 	return []Command{
+		{
+			Name:        CompactName,
+			Description: "总结当前会话并新建摘要续聊会话，保留原会话",
+			Handler:     handleCompact,
+		},
 		{
 			Name:        ContextName,
 			Description: "查看当前会话的上下文已用、剩余和用量明细",

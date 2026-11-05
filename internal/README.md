@@ -6,6 +6,7 @@
 internal/
   app/       应用入口、命令分流、会话切换、终端界面
   command/   命令注册、参数解析、handler、管道命令
+  compact/   将旧会话总结为续聊背景，不执行工具或修改历史
   session/   会话记录、任务队列、顺序消费、停止与退出
   agent/     模型流、工具调用、有限重试、输出记录
   task/      单次任务的输入、取消信号和完成结果
@@ -150,3 +151,5 @@ go test -race ./internal/... ./net ./views/... ./config -timeout 45s
 
 `task` 测试独立取消和完成通知；`agent` 测试独立对话和工具执行；`session` 测试队列、取消、Agent 集成和重试；`command` 测试命令解析；`app` 测试命令集成、跨会话切换、退出及 UI。
 测试使用本地模拟模型，不请求付费接口。
+
+`/compact` 阅读顺序：`command/compact.go` 获取空闲会话快照 → `compact/summary.go` 单次模型总结 → `session/summary.go` 保存新记录 → `App.AttachSession` 切换。`views/message/summary.go` 定义摘要来源和恢复标题；`record.go` 只在本地 JSONL 保存来源元数据。

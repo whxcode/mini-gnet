@@ -1,10 +1,11 @@
 # 本地命令模块
 
-这里管理 `/context`、`/mcp`、`/help`、`/tools`、`/skills`、`/config`、`/resume`、`/new`、`/sessions`、`/ps`、`/stop`、`/exit`。
+这里管理 `/compact`、`/context`、`/mcp`、`/help`、`/tools`、`/skills`、`/config`、`/resume`、`/new`、`/sessions`、`/ps`、`/stop`、`/exit`。
 
 - `registry.go`：命令名称、说明、参数限制、handler 注册，以及 `Lookup` 和帮助文本。
 - `handlers.go`：执行各命令，完成操作后只返回错误。
 - `mcp.go`：服务配置菜单、增删改查和管道操作，核心逻辑在独立 `internal/mcp` 包。
+- `compact.go`：读取空闲会话、请求摘要、保存并切换新会话；失败或取消保留原会话。
 - `context.go`：只读当前会话的上下文快照，不请求模型、不写聊天历史。
 - `tools.go`：从实际注册表生成 /tools 列表和定义详情。
 - `skills.go`：查看技能目录和引用写法；不设置待选状态、不加载正文。
@@ -20,7 +21,7 @@ if err != nil {
     continue
 }
 if cmd != nil {
-    if err := cmd.Handler(a, args); err != nil {
+    if err := cmd.Handler(ctx, a, args); err != nil {
         // 显示错误。
     }
     continue
@@ -33,3 +34,5 @@ if cmd != nil {
 命令流程归本包；会话列表和队列的生命周期仍由 App、Session 管理。菜单渲染在 `views/commands`，Esc 返回空选择，handler 随即结束。
 
 增加命令时，在 `registry.go` 添加名称和注册项，在 `handlers.go` 实现 handler。只有需要不同管道行为的命令才需调整 `pipe.go`。
+
+命令 handler 接收上游 `context.Context`；`/compact` 的模型请求随应用取消，并有三分钟超时。菜单只等待完成通知，Esc 返回后由命令取消并等待请求结束，不在 UI 回调中执行 Agent。

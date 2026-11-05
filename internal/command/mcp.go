@@ -1,6 +1,7 @@
 package command
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/whxcode/mini-gnet/internal/mcp"
@@ -10,7 +11,7 @@ import (
 const mcpUsage = "用法：/mcp [add [名称 URL] | edit 名称 [URL] | show 名称 | search 关键词 | remove 名称]"
 
 // handleMCP 分流命令参数或打开菜单，所有持久化由共享管理器完成。
-func handleMCP(a Application, args []string) error {
+func handleMCP(_ context.Context, a Application, args []string) error {
 	manager := a.MCPManager()
 	if len(args) == 0 {
 		return manageMCP(manager, "")

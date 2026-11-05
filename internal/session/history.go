@@ -38,6 +38,15 @@ func historyEvents(session *message.TempMessage) []conversation.Event {
 	callIndexes := make(map[string]int)
 
 	for _, msg := range history {
+		if msg.Summary != nil {
+			events = append(events, conversation.Event{
+				Role: conversation.System,
+				Name: "会话摘要",
+				Text: "来源：" + msg.Summary.Title + "\n会话 ID：" + msg.Summary.SessionID + "\n\n" + msg.Content,
+			})
+			continue
+		}
+
 		for _, call := range msg.ToolCalls {
 			toolNames[call.ID] = call.Function.Name
 		}

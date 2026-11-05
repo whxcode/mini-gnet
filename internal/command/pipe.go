@@ -1,6 +1,7 @@
 package command
 
 import (
+	"context"
 	"fmt"
 	"io"
 
@@ -9,8 +10,11 @@ import (
 
 // RunPipe 执行管道中的命令：菜单使用文本替代，其他操作直接调用同一个 Handler。
 // 应用只负责读取输入、调用此方法和输出错误，不维护第二份命令分支。
-func (c *Command) RunPipe(a Application, args []string, output io.Writer) error {
+func (c *Command) RunPipe(ctx context.Context, a Application, args []string, output io.Writer) error {
 	switch {
+	case c.Name == CompactName:
+		return compactPipe(ctx, a, output)
+
 	case c.Name == ContextName:
 		state := a.ActiveSession().Snapshot()
 		_, err := fmt.Fprintln(output, contextusage.Detail(state.ID, state.Title, state.Status, state.Usage))
@@ -72,6 +76,6 @@ func (c *Command) RunPipe(a Application, args []string, output io.Writer) error 
 		return nil
 
 	default:
-		return c.Handler(a, args)
+		return c.Handler(ctx, a, args)
 	}
 }

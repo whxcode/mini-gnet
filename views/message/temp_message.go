@@ -29,6 +29,7 @@ type Record struct {
 	openai.ChatCompletionMessage
 	Response  *ResponseInfo        `json:"agent_response,omitempty"` // nil 表示旧格式，未记录结束原因。
 	Execution *tools.ExecutionInfo `json:"tool_execution,omitempty"` // 仅保存在本地，不进入模型上下文。
+	Summary   *SummarySource       `json:"summary_source,omitempty"` // 摘要续聊来源；不计作本会话模型响应。
 }
 
 // ResponseInfo 记录模型本轮的结束原因和是否为本项最终回答。
@@ -65,6 +66,10 @@ func (t *TempMessage) Records() []Record {
 	records := slices.Clone(t.chats)
 	for index := range records {
 		records[index].Input = slices.Clone(records[index].Input)
+		if records[index].Summary != nil {
+			source := *records[index].Summary
+			records[index].Summary = &source
+		}
 	}
 	return records
 }

@@ -56,9 +56,9 @@ func New(history *message.TempMessage, runner *agent.Agent) *Session {
 		Output:     agent.NewOutput(historyEvents(history)),
 	}
 
-	for _, message := range session.Output.Snapshot().Messages {
-		if message.Role == conversation.User {
-			session.title = strings.Join(strings.Fields(message.Text), " ")
+	for _, record := range history.Records() {
+		if title := record.SessionTitle(); title != "" {
+			session.title = title
 			break
 		}
 	}

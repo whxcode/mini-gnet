@@ -1,6 +1,7 @@
 package command
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -8,7 +9,7 @@ import (
 )
 
 // handleSkills 仅展示技能目录或指定技能说明，不修改草稿或设置下一条任务的技能。
-func handleSkills(a Application, args []string) error {
+func handleSkills(_ context.Context, a Application, args []string) error {
 	text, err := skillsText(a.ConfigStore().Current().ProjectDir, args)
 	if err != nil {
 		return err

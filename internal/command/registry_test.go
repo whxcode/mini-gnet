@@ -14,6 +14,8 @@ func TestLookupCommand(t *testing.T) {
 		wantErr bool
 	}{
 		{"/help", HelpName, "", false},
+		{"/compact", CompactName, "", false},
+		{"/compact extra", "", "", true},
 		{"/skills", SkillsName, "", false},
 		{"/skills code-review", SkillsName, "code-review", false},
 		{"/skills{code-review} 检查", "", "", false},

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -23,7 +24,7 @@ func executeCommandForTest(t *testing.T, a *App, text string) error {
 		t.Fatalf("没有找到命令：%s", text)
 	}
 
-	return cmd.Handler(a, args)
+	return cmd.Handler(context.Background(), a, args)
 }
 
 // TestPSKeepsSessionState 验证快捷编号切换复用原会话，保留草稿与历史，错误编号不改变当前会话。

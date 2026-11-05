@@ -49,7 +49,7 @@ func (a *App) RunPipe(ctx context.Context, input io.Reader, output io.Writer) er
 			// 只有依赖菜单的命令需要文本形式；其余仍直接调用原 handler。
 			session := a.CurrentSession
 			firstEvent := len(session.Snapshot().Messages)
-			err = command.RunPipe(a, args, output)
+			err = command.RunPipe(ctx, a, args, output)
 			if err != nil {
 				fmt.Fprintln(output, conversation.Format(conversation.Event{
 					Role: conversation.Error,

@@ -47,8 +47,8 @@ func newApp(cfg config.Config, registry *tools.Registry) (*App, error) {
 	}, nil
 }
 
-// New 按顺序加载配置、工具和会话；初始化成功后，调用者负责 Close。
-func New() (*App, error) {
+// MakeApp 按顺序加载配置、工具和会话；初始化成功后，调用者负责 Close。
+func MakeApp() (*App, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, err
@@ -150,7 +150,7 @@ func (a *App) Run(ctx context.Context) error {
 				a.CurrentSession.Draft.Reset()
 			}
 
-			if err := command.Handler(a, args); err != nil {
+			if err := command.Handler(ctx, a, args); err != nil {
 				a.reportError(err)
 			}
 

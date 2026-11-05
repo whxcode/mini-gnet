@@ -102,17 +102,8 @@ func List(chatsDir string) ([]SessionInfo, error) {
 			s.Count = len(messages)
 
 			for _, msg := range messages {
-				if msg.Role == "user" {
-					title := msg.Content
-					if len(msg.Input) > 0 {
-						title = msg.Input.Label()
-					}
-					s.Title = strings.Join(strings.Fields(title), " ")
-
-					if s.Title == "" {
-						s.Title = "未命名会话"
-					}
-
+				if title := msg.SessionTitle(); title != "" {
+					s.Title = title
 					break
 				}
 			}
