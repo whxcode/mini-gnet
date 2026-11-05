@@ -7,6 +7,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	sessions "github.com/whxcode/mini-gnet/internal/session"
+	"github.com/whxcode/mini-gnet/views/contextusage"
 )
 
 // sessionStatus 统一标题和卡片上的图标、文字与颜色，不用颜色作为唯一状态提示。
@@ -82,8 +83,8 @@ func (m terminalModel) sessionGrid(width, maxHeight, currentNumber int) string {
 			textWidth := max(1, cardWidth-4)
 			content := lipgloss.NewStyle().Foreground(color).Render(displayLine(label, textWidth))
 			content += "\n" + workspaceMuted.Render(displayLine(title, textWidth))
-			content += "\n" + workspaceMuted.Render(displayLine(tokenContextText(state.Usage), textWidth))
-			content += "\n" + workspaceMuted.Render(displayLine(tokenContextCountText(state.Usage), textWidth))
+			content += "\n" + workspaceMuted.Render(displayLine(contextusage.UsedText(state.Usage), textWidth))
+			content += "\n" + workspaceMuted.Render(displayLine(contextusage.RemainingText(state.Usage), textWidth))
 			card := lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(borderColor).

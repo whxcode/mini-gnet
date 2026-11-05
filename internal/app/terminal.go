@@ -11,6 +11,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	sessions "github.com/whxcode/mini-gnet/internal/session"
+	"github.com/whxcode/mini-gnet/views/contextusage"
 	"github.com/whxcode/mini-gnet/views/conversation"
 )
 
@@ -327,11 +328,13 @@ func (m terminalModel) render() (tea.View, conversation.Transcript) {
 	cfg := m.app.config.Current()
 	meta := cfg.Model + "  ·  " + cfg.ProjectDir
 	header += "\n" + workspaceMuted.Render(displayLine(meta, width))
-	header += "\n" + workspaceMuted.Render(displayLine(tokenDetailText(snapshot.Usage), width))
+	header += "\n" + workspaceMuted.Render(displayLine(contextusage.Summary(snapshot.Usage), width))
 
 	// 输入框的边框、左右内边距各占两列。textarea 的宽度在 WindowSizeMsg 中同步调整。
 	draft := m.session.Draft
-	candidates := m.completionView(max(1, width-4))
+	// 先保留一个小候选区，排好聊天和会话卡片后，再把未用空间交给候选。
+	candidateHeight := max(2, min(5, m.height-19))
+	candidates := m.completionView(max(1, width-4), candidateHeight)
 	if candidates != "" {
 		draft.MaxHeight = max(1, m.height-18-lipgloss.Height(candidates))
 	}
@@ -404,6 +407,17 @@ func (m terminalModel) render() (tea.View, conversation.Transcript) {
 
 	beforeComposer := beforeBody + body.Content + "\n\n" + statusBlock
 	content := beforeComposer + composer + "\n" + footer
+
+	// 用实际渲染高度调整候选：有留白就展开，窄窗口折行占满空间时收缩。
+	// 至少保留一个候选和操作提示，不补空行，也不挤掉已经显示的聊天内容。
+	spareHeight := m.height - lipgloss.Height(content) - workspacePanel.GetVerticalFrameSize()
+	if candidates != "" && spareHeight != 0 {
+		candidateHeight = max(2, lipgloss.Height(candidates)+spareHeight)
+		candidates = m.completionView(max(1, width-4), candidateHeight)
+		composerContent = draft.View() + "\n\n" + candidates
+		composer = composerPanel.Width(width - 2).Render(composerContent)
+		content = beforeComposer + composer + "\n" + footer
+	}
 	view := tea.NewView(workspacePanel.Width(m.width).Render(content))
 	view.MouseMode = tea.MouseModeCellMotion
 

@@ -10,6 +10,7 @@ import (
 type Name string
 
 const (
+	ContextName  Name = "/context"
 	MCPName      Name = "/mcp"
 	HelpName     Name = "/help"
 	ConfigName   Name = "/config"
@@ -37,6 +38,11 @@ type Command struct {
 // List 是内置命令的唯一注册位置，同时供命令查找、帮助和输入候选使用。
 func List() []Command {
 	return []Command{
+		{
+			Name:        ContextName,
+			Description: "查看当前会话的上下文已用、剩余和用量明细",
+			Handler:     handleContext,
+		},
 		{
 			Name:        HelpName,
 			Description: "查看内置命令和快捷键",

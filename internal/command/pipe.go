@@ -3,12 +3,20 @@ package command
 import (
 	"fmt"
 	"io"
+
+	"github.com/whxcode/mini-gnet/views/contextusage"
 )
 
 // RunPipe 执行管道中的命令：菜单使用文本替代，其他操作直接调用同一个 Handler。
 // 应用只负责读取输入、调用此方法和输出错误，不维护第二份命令分支。
 func (c *Command) RunPipe(a Application, args []string, output io.Writer) error {
 	switch {
+	case c.Name == ContextName:
+		state := a.ActiveSession().Snapshot()
+		_, err := fmt.Fprintln(output, contextusage.Detail(state.ID, state.Title, state.Status, state.Usage))
+
+		return err
+
 	case c.Name == MCPName:
 		text, err := runMCPCommand(a.MCPManager(), args)
 		if err != nil {

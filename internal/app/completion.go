@@ -115,8 +115,8 @@ func (m *terminalModel) completionKey(key tea.KeyPressMsg) bool {
 	return false
 }
 
-// completionView 显示带类型标记的候选，最多四项；窄窗口仍保留 Esc 提示。
-func (m terminalModel) completionView(width int) string {
+// completionView 按布局分配的高度显示候选，预留错误和操作提示，选中项始终可见。
+func (m terminalModel) completionView(width, height int) string {
 	if len(m.completions) == 0 && m.completionError == "" {
 		return ""
 	}
@@ -124,8 +124,8 @@ func (m terminalModel) completionView(width int) string {
 	if m.completionError != "" {
 		lines = append(lines, workspaceNotice.Render(displayLine(m.completionError, width)))
 	}
-	pageSize := max(1, min(4, m.height-20))
-	start := m.completionIndex / pageSize * pageSize
+	pageSize := max(1, height-len(lines)-1)
+	start := min(m.completionIndex/pageSize*pageSize, max(0, len(m.completions)-pageSize))
 	for index := start; index < min(start+pageSize, len(m.completions)); index++ {
 		item := m.completions[index]
 		kind := "命令 "
@@ -146,7 +146,8 @@ func (m terminalModel) completionView(width int) string {
 		}
 		lines = append(lines, line)
 	}
-	footer := fmt.Sprintf("Esc 关闭 · ↑↓/Tab 选择 · Enter 确认  %d/%d", m.completionIndex+1, len(m.completions))
+	selected := min(m.completionIndex+1, len(m.completions))
+	footer := fmt.Sprintf("Esc 关闭 · ↑↓/Tab 选择 · Enter 确认  %d/%d", selected, len(m.completions))
 	lines = append(lines, workspaceMuted.Render(ansi.Truncate(footer, width, "…")))
 	return strings.Join(lines, "\n")
 }

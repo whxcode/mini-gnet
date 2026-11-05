@@ -16,7 +16,9 @@
 
 ## Token 与上下文统计
 
-会话卡片显示“上次上下文 ≈百分比”和“已用 / 上限 tokens”；当前会话标题下还显示精确计数及已记录的会话累计消耗。
+每个会话卡片分两行显示自己的“已用 / 剩余 tokens”，按数量使用整数、k、M 单位；标题下只显示当前会话的上下文。
+
+`/context` 查看当前会话的精确计数、配置上限、占用比例和单独列出的累计消耗。支持滚轮、↑↓、PgUp/PgDown，Esc 返回；菜单为打开时的快照，管道模式输出同一份文本。
 
 - 已用上下文按最近一轮服务端上报的 `prompt_tokens + completion_tokens` 估算。百分比是这个值除以那轮请求配置的 `contextWindow`，不是累计消耗除以上限。
 - `/config` 中的“上下文上限”填写服务实际使用的窗口大小，默认 `0`（未知）。此字段仅用于显示，不修改 Ollama 或其他服务的模型设置；不要直接填写模型宣传的理论上限。保存后从下一项任务开始记录新的上限。
@@ -24,4 +26,4 @@
 - 未上报用量或未知上限时显示 `--`。旧聊天记录没有统计，无法补算；累计只包含已记录的响应，中断或未保存的响应可能缺失。
 - 用量保存在 JSONL 的 `agent_response.usage`，恢复会话时重建统计，不发送给模型。各会话独立统计，切换不会清空。
 
-代码顺序：`net/net.go` 请求并读取流式 usage → `internal/agent/agent.go` 保存每轮响应 → `views/message/usage.go` 累计并恢复 → `internal/session/display.go` 提供快照 → `token_usage.go` / `session_grid.go` 展示。
+代码顺序：`net/net.go` 请求并读取流式 usage → `internal/agent/agent.go` 保存每轮响应 → `views/message/usage.go` 累计并恢复 → `internal/session/display.go` 提供快照 → `views/contextusage` 统一展示口径 → `session_grid.go` 和 `/context` 展示。
