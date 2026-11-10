@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 )
@@ -21,6 +22,11 @@ type Scheduler struct {
 	closed bool
 	// 任务状态 id: TaskState
 	taskSnapshot map[string]*TaskSnapshot
+}
+
+type Result struct {
+	value any
+	err   error
 }
 
 func NewScheduler(workerNum int) *Scheduler {
@@ -69,12 +75,23 @@ func (s *Scheduler) worker() {
 		// 修改对应任务的状态
 		snapshot := s.taskSnapshot[task.ID]
 
-		if snapshot != nil {
-			snapshot.State = TaskRunning
-			snapshot.ctx, snapshot.cancel = context.WithCancel(context.Background())
+		if snapshot == nil {
+			// 如果任务快照不存在，
+			// 出现了异常
+			// 这里直接跳过，继续执行下一个任务
+			continue
 		}
 
+		if task.Timeout == 0 {
+			snapshot.ctx, snapshot.cancel = context.WithCancel(context.Background())
+		} else {
+			snapshot.ctx, snapshot.cancel = context.WithTimeout(context.Background(), task.Timeout)
+		}
+		snapshot.State = TaskRunning
+
 		s.queueMutex.Unlock()
+
+		// 开始执行任务
 		var result any
 		var err error
 
@@ -85,6 +102,8 @@ func (s *Scheduler) worker() {
 				}
 			}()
 
+			defer snapshot.cancel()
+
 			result, err = task.Func(snapshot.ctx)
 		}()
 
@@ -92,13 +111,19 @@ func (s *Scheduler) worker() {
 			s.queueMutex.Lock()
 
 			if err != nil {
-				snapshot.State = TaskFailed
+				// 如果任务在运行中被取消.
+				// 不在重复设置状态值
+				if errors.Is(err, context.Canceled) {
+					snapshot.State = TaskFailed
+				} else {
+					snapshot.State = TaskFailed
+					snapshot.Err = err
+				}
 			} else {
 				snapshot.State = TaskSucceeded
+				snapshot.Result = result
 			}
 
-			snapshot.Result = result
-			snapshot.Err = err
 			s.queueMutex.Unlock()
 		}
 
@@ -143,16 +168,30 @@ func (s *Scheduler) Cancel(taskID string) error {
 		return fmt.Errorf("Task with ID %s does not exist", taskID)
 	}
 
-	// 任务还未运行
+	// 任务已执行完毕
+	if snapshot.State == TaskFailed || //
+		snapshot.State == TaskSucceeded {
+		return fmt.Errorf("Task with ID %s has already completed", taskID)
+	}
+
+	// 任务已经取消
+	if snapshot.State == TaskCanceled || //
+		snapshot.State == TaskCanceling {
+		return fmt.Errorf("Task with ID %s is already canceled or canceling", taskID)
+	}
+
 	switch snapshot.State {
+	// 任务还未运行;直接从任务队列中移除，并标记为取消
 	case TaskPedding:
 		snapshot.State = TaskCanceled
 		s.queue.DequeueWithTaskID(taskID)
 	case TaskRunning:
-		// 任务正在运行中
+		// 任务正在运行中;向任务函数发送取消信号，并标记为取消中
 		snapshot.State = TaskCanceling
 		snapshot.cancel()
 	}
+
+	snapshot.Err = context.Canceled
 
 	return nil
 }

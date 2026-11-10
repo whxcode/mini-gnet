@@ -1,13 +1,16 @@
 package scheduler
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type TaskState uint8
 
 const (
 	// 未执行
 	TaskPedding TaskState = iota
-	// 已取消，函数不会再执行或已经退出。
+	// 任务还未直接;直接取消
 	TaskCanceled
 	// 执行中
 	TaskRunning
@@ -45,12 +48,27 @@ type Task struct {
 	ID string
 	// 任务函数
 	Func TaskFunc
+	// 任务超时间
+	Timeout time.Duration
 }
 
 func NewTask(id string, f TaskFunc) Task {
 	return Task{
-		ID:   id,
-		Func: f,
+		ID:      id,
+		Func:    f,
+		Timeout: 0,
+	}
+}
+
+func NewTaskWithTimeout(
+	id string,
+	f TaskFunc,
+	timeout time.Duration,
+) Task {
+	return Task{
+		ID:      id,
+		Func:    f,
+		Timeout: timeout,
 	}
 }
 
