@@ -37,4 +37,8 @@ func (h *Heap) Swap(i int, j int) {
 	(*h)[i], (*h)[j] = (*h)[j], (*h)[i]
 }
 
+func NewHeap() *Heap {
+	return &Heap{}
+}
+
 var _ heap.Interface = &Heap{}
