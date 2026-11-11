@@ -50,6 +50,8 @@ type Task struct {
 	Func TaskFunc
 	// 任务超时间
 	Timeout time.Duration
+	// 任务优先级
+	Priority int
 }
 
 func NewTask(id string, f TaskFunc) Task {

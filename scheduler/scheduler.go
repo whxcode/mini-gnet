@@ -70,6 +70,7 @@ func (s *Scheduler) worker() {
 		if !ok {
 			s.queueMutex.Unlock()
 			continue
+
 		}
 
 		// 修改对应任务的状态
@@ -79,6 +80,7 @@ func (s *Scheduler) worker() {
 			// 如果任务快照不存在，
 			// 出现了异常
 			// 这里直接跳过，继续执行下一个任务
+			s.queueMutex.Unlock()
 			continue
 		}
 
@@ -87,6 +89,7 @@ func (s *Scheduler) worker() {
 		} else {
 			snapshot.ctx, snapshot.cancel = context.WithTimeout(context.Background(), task.Timeout)
 		}
+
 		snapshot.State = TaskRunning
 
 		s.queueMutex.Unlock()
