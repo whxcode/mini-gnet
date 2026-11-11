@@ -11,7 +11,9 @@ type Scheduler struct {
 	// worker 数量
 	workerNum int
 	// 任务队列
-	queue *Queue
+	//queue *Queue
+	// 优先队列
+	heap *Heap
 	// 读取任务锁
 	queueMutex sync.Mutex
 	// 任务执行通知
@@ -24,23 +26,16 @@ type Scheduler struct {
 	taskSnapshot map[string]*TaskSnapshot
 }
 
-type Result struct {
-	value any
-	err   error
-}
-
 func NewScheduler(workerNum int) *Scheduler {
 	s := &Scheduler{
 		workerNum:    workerNum,
-		queue:        NewQueue(),
+		heap:         NewHeap(),
 		taskSnapshot: make(map[string]*TaskSnapshot),
 		closed:       false,
 	}
 
 	s.queueCond = sync.NewCond(&s.queueMutex)
 	s.workerWaitGroup.Add(workerNum)
-
-	fmt.Println("Starting scheduler with", workerNum, "workers")
 
 	for range s.workerNum {
 		go s.worker()
@@ -56,17 +51,19 @@ func (s *Scheduler) worker() {
 		s.queueMutex.Lock()
 
 		// 没任务且还会接收任务：等待。
-		for len(*s.queue) == 0 && !s.closed {
+		for s.heap.Len() == 0 && !s.closed {
 			s.queueCond.Wait()
 		}
 
 		// 已停止接收，剩余任务也处理完了：退出。
-		if len(*s.queue) == 0 && s.closed {
+		if s.heap.Len() == 0 && s.closed {
 			s.queueMutex.Unlock()
 			return
 		}
 
-		task, ok := s.queue.Dequeue()
+		// 到了这一步通过 s.queueCond 已经重新获得了 q.queueMutex
+		task, ok := s.heap.Pop()
+
 		if !ok {
 			s.queueMutex.Unlock()
 			continue
@@ -94,11 +91,7 @@ func (s *Scheduler) worker() {
 
 		s.queueMutex.Unlock()
 
-		// 开始执行任务
-		var result any
-		var err error
-
-		func() {
+		result, err := func() (result any, err error) {
 			defer func() {
 				if r := recover(); r != nil {
 					err = fmt.Errorf("task %s panicked: %v", task.ID, r)
@@ -107,29 +100,30 @@ func (s *Scheduler) worker() {
 
 			defer snapshot.cancel()
 
-			result, err = task.Func(snapshot.ctx)
+			return task.Func(snapshot.ctx)
 		}()
 
-		if snapshot != nil {
-			s.queueMutex.Lock()
-
-			if err != nil {
-				// 如果任务在运行中被取消.
-				// 不在重复设置状态值
-				if errors.Is(err, context.Canceled) {
-					snapshot.State = TaskFailed
-				} else {
-					snapshot.State = TaskFailed
-					snapshot.Err = err
-				}
-			} else {
-				snapshot.State = TaskSucceeded
-				snapshot.Result = result
-			}
-
-			s.queueMutex.Unlock()
+		if snapshot == nil {
+			continue
 		}
 
+		s.queueMutex.Lock()
+
+		if err != nil {
+			// 如果任务在运行中被取消.
+			// 不在重复设置状态值
+			if errors.Is(err, context.Canceled) {
+				snapshot.State = TaskFailed
+			} else {
+				snapshot.State = TaskFailed
+				snapshot.Err = err
+			}
+		} else {
+			snapshot.State = TaskSucceeded
+			snapshot.Result = result
+		}
+
+		s.queueMutex.Unlock()
 	}
 }
 
@@ -147,16 +141,13 @@ func (s *Scheduler) AddTask(task ...Task) error {
 
 	for _, t := range task {
 		if _, exists := s.taskSnapshot[t.ID]; exists {
-			return fmt.Errorf("Task with ID %s already exists", t.ID)
+			continue
 		}
 
 		s.taskSnapshot[t.ID] = NewTaskSnapshot(t.ID, TaskPedding)
-	}
-
-	s.queue.Enqueue(task...)
-
-	for range task {
+		newT := t
 		s.notice()
+		s.heap.Push(&newT)
 	}
 
 	return nil
@@ -187,7 +178,7 @@ func (s *Scheduler) Cancel(taskID string) error {
 	// 任务还未运行;直接从任务队列中移除，并标记为取消
 	case TaskPedding:
 		snapshot.State = TaskCanceled
-		s.queue.DequeueWithTaskID(taskID)
+		s.heap.Remove(taskID)
 	case TaskRunning:
 		// 任务正在运行中;向任务函数发送取消信号，并标记为取消中
 		snapshot.State = TaskCanceling

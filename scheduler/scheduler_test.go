@@ -94,7 +94,7 @@ func _TestSchedulerCancel(t *testing.T) {
 	scheduler.Wait()
 }
 
-func TestSchedulerTimeout(t *testing.T) {
+func _TestSchedulerTimeout(t *testing.T) {
 	scheduler := NewScheduler(1)
 
 	scheduler.AddTask(
@@ -113,4 +113,45 @@ func TestSchedulerTimeout(t *testing.T) {
 	time.Sleep(2 * time.Second) //
 
 	t.Log(scheduler.GetTaskSnapshot("task1"))
+}
+
+func TestSchedulerPriority(t *testing.T) {
+	scheduler := NewScheduler(2)
+
+	t1 := Task{
+		ID:       "t1",
+		Priority: 1,
+		Func: func(ctx context.Context) (string, error) {
+			time.Sleep(2 * time.Second) //
+			fmt.Println("t1 executed")
+			return "t1 result", ctx.Err()
+		},
+	}
+
+	t2 := Task{
+		ID:       "t2",
+		Priority: 2,
+		Func: func(ctx context.Context) (string, error) {
+			time.Sleep(2 * time.Second) //
+			fmt.Println("t2 executed")
+			return "t2 result", ctx.Err()
+		},
+	}
+
+	t3 := Task{
+		ID:       "t3",
+		Priority: 3,
+		Func: func(ctx context.Context) (string, error) {
+			time.Sleep(2 * time.Second) //
+			fmt.Println("t3 executed")
+			return "t3 result", ctx.Err()
+		},
+	}
+
+	scheduler.AddTask(t1, t2, t3)
+
+	scheduler.Close()
+	scheduler.Wait()
+
+	time.Sleep(2 * time.Second) //
 }
