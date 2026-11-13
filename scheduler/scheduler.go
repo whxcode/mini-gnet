@@ -7,6 +7,8 @@ import (
 	"sync"
 )
 
+var ErrClosed = errors.New("scheduler is closed, cannot add new tasks")
+
 type Scheduler struct {
 	// worker 数量
 	workerNum int
@@ -136,7 +138,7 @@ func (s *Scheduler) AddTask(task ...Task) error {
 	defer s.queueMutex.Unlock()
 
 	if s.closed {
-		return fmt.Errorf("Scheduler is closed, cannot add new tasks")
+		return ErrClosed
 	}
 
 	for _, t := range task {
