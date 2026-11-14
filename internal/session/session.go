@@ -18,6 +18,10 @@ import (
 	"github.com/whxcode/mini-gnet/views/message"
 )
 
+const (
+	maxPendingTasks = 2
+)
+
 // Session 是一个打开的聊天窗口：保存聊天记录、输入草稿和这个窗口的任务状态。
 // App.CurrentSession 决定看哪个窗口；切换窗口不会移动或重启任务。
 type Session struct {
@@ -47,7 +51,7 @@ func New(history *message.TempMessage, runner *agent.Agent) *Session {
 	session := &Session{
 		runner:     runner,
 		History:    history,
-		taskQueue:  make(chan *tasks.Task, 16),
+		taskQueue:  make(chan *tasks.Task, maxPendingTasks),
 		workerDone: make(chan struct{}),
 		Draft:      input.NewComposer(),
 		status:     "空闲",
@@ -112,7 +116,7 @@ func (s *Session) EnqueueInput(parent context.Context, input query.Input) (*task
 	default:
 		job.Cancel()
 
-		return nil, fmt.Errorf("当前会话的等待队列已满（16 项），请稍后再发送")
+		return nil, fmt.Errorf("当前会话的等待队列已满（%d 项），请稍后再发送", maxPendingTasks)
 	}
 }
 
@@ -155,7 +159,6 @@ func (s *Session) Run() {
 // finishTask 在 Agent.Run 返回后顺序调用：保存最终状态，保留中断的文字，并通知等待者任务已结束。
 // 所有内存状态和历史写入都结束后才关闭 done，避免程序退出时提前关闭文件。
 func (s *Session) finishTask(job *tasks.Task, runErr error) {
-
 	// 1. 写入错误已由 Agent.Run 直接返回；这里只补充任务取消的状态。
 	if job.Context.Err() != nil {
 		runErr = job.Context.Err()

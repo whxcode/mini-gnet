@@ -157,7 +157,7 @@ func _TestSchedulerPriority(t *testing.T) {
 	time.Sleep(2 * time.Second) //
 }
 
-func TestSchedulerClose(t *testing.T) {
+func _TestSchedulerClose(t *testing.T) {
 	scheduler := NewScheduler(2)
 
 	t1 := Task{
@@ -201,4 +201,26 @@ func TestSchedulerClose(t *testing.T) {
 	scheduler.Wait()
 
 	time.Sleep(2 * time.Second) //
+}
+
+func TestSchedulerShirk(t *testing.T) {
+	scheduler := NewScheduler(2)
+
+	t1 := Task{
+		ID:       "t1",
+		Priority: 1,
+		Func: func(ctx context.Context) (string, error) {
+			fmt.Println("t1 executed start")
+			time.Sleep(4 * time.Second) //
+			fmt.Println("t1 executed end")
+			return "t1 result", ctx.Err()
+		},
+	}
+
+	time.Sleep(2 * time.Second) //
+	scheduler.AddTask(t1)
+	scheduler.Close()
+	scheduler.Wait()
+
+	// time.Sleep(10 * time.Second) //
 }

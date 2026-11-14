@@ -116,7 +116,9 @@ func (a *App) Close() error {
 // Run 专用于交互终端：读输入、执行命令或提交队列；管道入口独立放在 pipe.go。
 func (a *App) Run(ctx context.Context) error {
 	for !a.quit {
-		if err := ctx.Err(); err != nil {
+
+		if err := ctx.Err(); //
+		err != nil {
 			return err
 		}
 
