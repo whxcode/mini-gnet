@@ -204,14 +204,14 @@ func _TestSchedulerClose(t *testing.T) {
 }
 
 func TestSchedulerShirk(t *testing.T) {
-	scheduler := NewScheduler(2)
+	scheduler := NewScheduler(10 * 2)
 
 	t1 := Task{
 		ID:       "t1",
 		Priority: 1,
 		Func: func(ctx context.Context) (string, error) {
 			fmt.Println("t1 executed start")
-			time.Sleep(4 * time.Second) //
+			time.Sleep(2 * time.Second) //
 			fmt.Println("t1 executed end")
 			return "t1 result", ctx.Err()
 		},
@@ -219,7 +219,42 @@ func TestSchedulerShirk(t *testing.T) {
 
 	time.Sleep(2 * time.Second) //
 	scheduler.AddTask(t1)
-	scheduler.Close()
+
+	time.Sleep(2 * time.Second) //
+
+	t2 := Task{
+		ID:       "t2",
+		Priority: 1,
+		Func: func(ctx context.Context) (string, error) {
+			fmt.Println("t2 executed start")
+			time.Sleep(2 * time.Second) //
+			fmt.Println("t2 executed end")
+			return "t2 result", ctx.Err()
+		},
+	}
+
+	scheduler.AddTask(t2)
+
+	fmt.Println("开始添加任务")
+	for i := 3; i <= 15; i++ {
+		ID := "t" + fmt.Sprintf("%d", i)
+		t2 := Task{
+			ID:       ID,
+			Priority: 1,
+			Func: func(ctx context.Context) (string, error) {
+				fmt.Printf("t%d executed start\n", i)
+				time.Sleep(1 * time.Second) //
+				fmt.Printf("t%d executed end\n", i)
+				return ID + "Result", ctx.Err()
+			},
+		}
+
+		scheduler.AddTask(t2)
+	}
+
+	fmt.Println("任务添加完成")
+
+	// scheduler.Close()
 	scheduler.Wait()
 
 	// time.Sleep(10 * time.Second) //

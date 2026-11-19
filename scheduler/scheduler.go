@@ -17,30 +17,36 @@ type Scheduler struct {
 	//queue *Queue
 	// 优先队列
 	heap *Heap
-	// 读取任务锁
-	queueMutex sync.Mutex
 	// 任务完成等待组
 	workerWaitGroup sync.WaitGroup
 	// 是否已经停止接收新任务。
 	closed bool
 	// 使用原子操作
-	closeMutex sync.atomic
+	// closeMutex sync.atomic
 	// 任务状态 id: TaskState
-	taskSnapshot map[string]*TaskSnapshot
+	// taskSnapshot map[string]*TaskSnapshot
+	taskSnapshot sync.Map //map[string]*TaskSnapshot
 	// task
 	taskNotice chan struct{}
-
+	// 关闭通知
 	closeNotice chan struct{}
+	// 关闭worker通知
+	closeWorkerMtx sync.Mutex
+	// 关闭锁
+	closeMtx sync.RWMutex
+	// 最大 worker 数量
+	maxWorkerNum int
 }
 
 func NewScheduler(workerNum int) *Scheduler {
 	s := &Scheduler{
 		workerNum:    workerNum,
 		heap:         NewHeap(),
-		taskSnapshot: make(map[string]*TaskSnapshot),
+		taskSnapshot: sync.Map{}, // make(map[string]*TaskSnapshot),
 		closed:       false,
 		taskNotice:   make(chan struct{}, workerNum),
 		closeNotice:  make(chan struct{}, 1),
+		maxWorkerNum: workerNum,
 	}
 
 	s.workerWaitGroup.Add(workerNum)
@@ -51,30 +57,37 @@ func NewScheduler(workerNum int) *Scheduler {
 		i++
 	}
 
+	go func() {
+		for {
+			select {
+			case <-time.NewTimer(time.Second * 2).C:
+				s.closeWorkerMtx.Lock()
+				fmt.Println("---------")
+				fmt.Printf("worker_num[%d]\njobs__num[%d]\n", s.workerNum, s.heap.Len())
+				fmt.Println("---------")
+				s.closeWorkerMtx.Unlock()
+			}
+		}
+	}()
+
 	return s
 }
 
 func (s *Scheduler) a() {
-	s.queueMutex.Lock()
-
-	// 到了这一步通过 s.queueCond 已经重新获得了 q.queueMutex
 	task, ok := s.heap.Pop()
 
 	if !ok {
-		s.queueMutex.Unlock()
 		return
-		// continue
-
 	}
 
 	// 修改对应任务的状态
-	snapshot := s.taskSnapshot[task.ID]
+	snapshotPtr, _ := s.taskSnapshot.Load(task.ID)
+	snapshot, ok := snapshotPtr.(*TaskSnapshot)
 
 	if snapshot == nil {
 		// 如果任务快照不存在，
 		// 出现了异常
 		// 这里直接跳过，继续执行下一个任务
-		s.queueMutex.Unlock()
 		return
 		//continue
 	}
@@ -86,8 +99,6 @@ func (s *Scheduler) a() {
 	}
 
 	snapshot.State = TaskRunning
-
-	s.queueMutex.Unlock()
 
 	result, err := func() (result any, err error) {
 		defer func() {
@@ -106,8 +117,6 @@ func (s *Scheduler) a() {
 		//continue
 	}
 
-	s.queueMutex.Lock()
-
 	if err != nil {
 		// 如果任务在运行中被取消.
 		// 不在重复设置状态值
@@ -121,28 +130,39 @@ func (s *Scheduler) a() {
 		snapshot.State = TaskSucceeded
 		snapshot.Result = result
 	}
-
-	s.queueMutex.Unlock()
 }
 
 func (s *Scheduler) worker(workerID int) {
 	defer s.workerWaitGroup.Done()
 
 	for {
+
+		s.closeMtx.RLock()
 		if s.closed {
+			s.closeMtx.RUnlock()
 			fmt.Println("关闭通知....", workerID)
 			return
 		}
 
-		timer := time.NewTimer(time.Second * 1000)
+		s.closeMtx.RUnlock()
+
+		timer := time.NewTimer(time.Second * 2)
 
 		select {
 		case <-s.taskNotice:
-			fmt.Println("任务通知....", workerID)
 			timer.Stop()
 			s.a()
 		case <-timer.C:
+			s.closeWorkerMtx.Lock()
+			if s.workerNum == 1 {
+				s.closeWorkerMtx.Unlock()
+				continue
+			}
+
+			s.workerNum--
+			s.closeWorkerMtx.Unlock()
 			fmt.Println("任务超时....", workerID)
+
 			return
 		case <-s.closeNotice:
 		}
@@ -155,31 +175,44 @@ func (s *Scheduler) notice() {
 }
 
 func (s *Scheduler) AddTask(task ...Task) error {
-	s.queueMutex.Lock()
-	defer s.queueMutex.Unlock()
-
 	if s.closed {
 		return ErrClosed
 	}
 
 	for _, t := range task {
-		if _, exists := s.taskSnapshot[t.ID]; exists {
+		if _, exists := s.taskSnapshot.Load(t.ID); exists {
 			continue
 		}
 
-		s.taskSnapshot[t.ID] = NewTaskSnapshot(t.ID, TaskPedding)
+		s.taskSnapshot.Store(t.ID, NewTaskSnapshot(t.ID, TaskPedding))
+
 		newT := t
-		s.notice()
 		s.heap.Push(&newT)
+		s.notice()
+	}
+
+	//  扩容
+	s.closeWorkerMtx.Lock()
+	defer s.closeWorkerMtx.Unlock()
+	if s.heap.Len() > 5 && s.workerNum < s.maxWorkerNum {
+		shirk := s.maxWorkerNum - s.workerNum
+		// 固定扩容 6 worker
+		s.workerNum = s.workerNum + shirk
+		s.workerWaitGroup.Add(shirk)
+
+		for i := 0; i < shirk; i++ {
+			go s.worker(s.workerNum + i)
+		}
+
+		fmt.Println("扩容")
 	}
 
 	return nil
 }
 
 func (s *Scheduler) Cancel(taskID string) error {
-	s.queueMutex.Lock()
-	defer s.queueMutex.Unlock()
-	snapshot, ok := s.taskSnapshot[taskID]
+	snapshotPtr, ok := s.taskSnapshot.Load(taskID)
+	snapshot, ok := snapshotPtr.(*TaskSnapshot)
 
 	if !ok {
 		return fmt.Errorf("Task with ID %s does not exist", taskID)
@@ -214,12 +247,9 @@ func (s *Scheduler) Cancel(taskID string) error {
 }
 
 func (s *Scheduler) GetTaskSnapshot(taskID string) *TaskSnapshot {
-	s.queueMutex.Lock()
-	defer s.queueMutex.Unlock()
+	if snapshot, ok := s.taskSnapshot.Load(taskID); ok {
 
-	if snapshot, ok := s.taskSnapshot[taskID]; ok {
-
-		sc := *snapshot
+		sc := *snapshot.(*TaskSnapshot)
 		return &sc
 	}
 
@@ -227,7 +257,15 @@ func (s *Scheduler) GetTaskSnapshot(taskID string) *TaskSnapshot {
 }
 
 func (s *Scheduler) Close() {
+	// 只有外部一个调用协程调用;
+	// 起内部 worker 只是只读
+
+	s.closeMtx.Lock()
 	s.closed = true
+	s.closeMtx.Unlock()
+
+	s.closeWorkerMtx.Lock()
+	defer s.closeWorkerMtx.Unlock()
 
 	for i := 0; i < s.workerNum; i++ {
 		s.closeNotice <- struct{}{}

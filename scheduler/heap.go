@@ -1,22 +1,32 @@
 package scheduler
 
-import "container/heap"
+import (
+	"container/heap"
+	"sync"
+)
 
 type heapCore struct {
 	data  []*Task
+	l     sync.Mutex
 	index map[string]int
 }
 
 func (h *heapCore) Len() int {
+	h.l.Lock()
+	defer h.l.Unlock()
 	return len(h.data)
 }
 
 func (h *heapCore) Less(i int, j int) bool {
+	h.l.Lock()
+	defer h.l.Unlock()
 	// 最大堆，优先级高的任务先执行
 	return h.data[i].Priority > h.data[j].Priority
 }
 
 func (h *heapCore) Swap(i int, j int) {
+	h.l.Lock()
+	defer h.l.Unlock()
 	h.data[i], h.data[j] = h.data[j], h.data[i]
 
 	h.index[h.data[i].ID] = i
@@ -24,6 +34,9 @@ func (h *heapCore) Swap(i int, j int) {
 }
 
 func (h *heapCore) Pop() any {
+	h.l.Lock()
+	defer h.l.Unlock()
+
 	if len(h.data) == 0 {
 		return nil
 	}
@@ -41,6 +54,9 @@ func (h *heapCore) Pop() any {
 }
 
 func (h *heapCore) Push(x any) {
+	h.l.Lock()
+	defer h.l.Unlock()
+
 	item, ok := x.(*Task)
 	if !ok {
 		panic("invalid type")
@@ -70,12 +86,15 @@ func (h *Heap) Push(x *Task) {
 func (h *Heap) Remove(taskID string) {
 	if _, ok := h.h.index[taskID]; ok {
 		heap.Remove(h.h, h.h.index[taskID])
+
+		h.h.l.Lock()
+		defer h.h.l.Unlock()
 		delete(h.h.index, taskID)
 	}
 }
 
 func (h *Heap) Len() int {
-	return len(h.h.data)
+	return h.h.Len()
 }
 
 func NewHeap() *Heap {
