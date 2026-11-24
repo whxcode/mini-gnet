@@ -169,22 +169,28 @@ func (s *Scheduler) worker(workerID int) {
 	}
 }
 
-func (s *Scheduler) notice() {
-	s.taskNotice <- struct{}{}
-	// s.queueCond.Signal()
+func (s *Scheduler) notice() error {
+	select {
+	case s.taskNotice <- struct{}{}:
+		return nil
+	case <-s.closeNotice:
+		return ErrClosed
+	}
 }
 
 func (s *Scheduler) AddTask(task ...Task) error {
+	s.closeMtx.RLock()
 	if s.closed {
+		s.closeMtx.RUnlock()
 		return ErrClosed
 	}
 
+	s.closeMtx.RUnlock()
+
 	for _, t := range task {
-		if _, exists := s.taskSnapshot.Load(t.ID); exists {
+		if _, loaded := s.taskSnapshot.LoadOrStore(t.ID, NewTaskSnapshot(t.ID, TaskPedding)); loaded {
 			continue
 		}
-
-		s.taskSnapshot.Store(t.ID, NewTaskSnapshot(t.ID, TaskPedding))
 
 		newT := t
 		s.heap.Push(&newT)
@@ -194,24 +200,24 @@ func (s *Scheduler) AddTask(task ...Task) error {
 	//  扩容
 	s.closeWorkerMtx.Lock()
 	defer s.closeWorkerMtx.Unlock()
+
 	if s.heap.Len() > 5 && s.workerNum < s.maxWorkerNum {
 		shirk := s.maxWorkerNum - s.workerNum
 		// 固定扩容 6 worker
 		s.workerNum = s.workerNum + shirk
 		s.workerWaitGroup.Add(shirk)
 
-		for i := 0; i < shirk; i++ {
+		for i := range shirk {
 			go s.worker(s.workerNum + i)
 		}
 
-		fmt.Println("扩容")
 	}
 
 	return nil
 }
 
 func (s *Scheduler) Cancel(taskID string) error {
-	snapshotPtr, ok := s.taskSnapshot.Load(taskID)
+	snapshotPtr, _ := s.taskSnapshot.Load(taskID)
 	snapshot, ok := snapshotPtr.(*TaskSnapshot)
 
 	if !ok {
@@ -257,19 +263,16 @@ func (s *Scheduler) GetTaskSnapshot(taskID string) *TaskSnapshot {
 }
 
 func (s *Scheduler) Close() {
-	// 只有外部一个调用协程调用;
-	// 起内部 worker 只是只读
-
 	s.closeMtx.Lock()
-	s.closed = true
-	s.closeMtx.Unlock()
+	defer s.closeMtx.Unlock()
 
-	s.closeWorkerMtx.Lock()
-	defer s.closeWorkerMtx.Unlock()
-
-	for i := 0; i < s.workerNum; i++ {
-		s.closeNotice <- struct{}{}
+	if s.closed {
+		return
 	}
+
+	s.closed = true
+
+	close(s.closeNotice)
 }
 
 func (s *Scheduler) Wait() {

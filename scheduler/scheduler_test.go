@@ -6,8 +6,54 @@ import (
 	"fmt"
 	"runtime"
 	"testing"
+	"testing/synctest"
 	"time"
 )
+
+// TestSchedulerCloseReturnsAfterWorkersExit 复现 worker 直接退出后，关闭通知无人接收的问题。
+func TestSchedulerCloseReturnsAfterWorkersExit(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		// 按构造函数初始化，但延后启动 worker，模拟它们尚未获得调度的情况。
+		// 不启动构造函数中永不退出的打印协程，以免干扰测试的结束。
+		s := &Scheduler{
+			workerNum:    2,
+			heap:         NewHeap(),
+			taskNotice:   make(chan struct{}, 2),
+			closeNotice:  make(chan struct{}, 1),
+			maxWorkerNum: 2,
+		}
+		s.workerWaitGroup.Add(2)
+
+		closeReturned := make(chan struct{})
+		go func() {
+			s.Close() // 会永久阻塞
+			close(closeReturned)
+		}()
+
+		// 等 Close 阻塞：它已设置 closed，第一次发送填满缓冲，第二次发送等待接收。
+		// synctest.Wait 等待其他协程退出或持久阻塞，不依赖 Sleep 猜测执行进度。
+		synctest.Wait()
+
+		go s.worker(0)
+		go s.worker(1)
+		s.Wait()
+		synctest.Wait()
+
+		// 两个 worker 都已退出，此时 Close 理应能够返回。
+		select {
+		case <-closeReturned:
+			return
+		default:
+			t.Errorf("已复现：两个 worker 均已退出，但 Close 仍阻塞，关闭通知缓冲中有 %d 条消息", len(s.closeNotice))
+		}
+
+		// 测试主动接收两条通知，释放阻塞的 Close，避免失败后留下协程。
+		// 正常使用中没有这位接收者，所以 Close 会一直阻塞。
+		<-s.closeNotice
+		<-s.closeNotice
+		<-closeReturned
+	})
+}
 
 func _TestScheduler(t *testing.T) {
 	scheduler := NewScheduler(runtime.NumCPU())
